@@ -1,26 +1,68 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --rose-dark: #8B1A2F;
+  --gold: #C9A84C;
+  --cream: #F5EDD6;
+  --dark: #0b0203;
+  --track-green: #1B4332;
+  --track-dirt: #8b5a3c;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-rose-dark: var(--rose-dark);
+  --color-gold: var(--gold);
+  --color-cream: var(--cream);
+  --color-dark: var(--dark);
+  --color-track-green: var(--track-green);
+  --color-track-dirt: var(--track-dirt);
+  --font-serif: var(--font-playfair);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  background: var(--dark);
+  color: #FFFFFF;
+  min-height: 100vh;
+  font-size: 16px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Hide scrollbars on track screen */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Subtle textured background */
+.bg-derby {
+  background-color: var(--dark);
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(139, 26, 47, 0.18) 0%, transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(201, 168, 76, 0.10) 0%, transparent 50%);
+}
+
+/* Admin input — used in the admin console */
+.admin-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+.admin-input:focus {
+  border-color: var(--gold);
+}
+.admin-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+.admin-input option {
+  background: var(--dark);
+  color: #FFFFFF;
 }

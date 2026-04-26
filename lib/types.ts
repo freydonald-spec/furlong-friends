@@ -1,0 +1,66 @@
+export type Event = {
+  id: string
+  name: string
+  track: string
+  location: string
+  date: string
+  buy_in_amount: number
+  multiplier_visible: boolean
+  score_reveal_mode: 'auto' | 'manual'
+  status: string
+}
+
+export type Race = {
+  id: string
+  event_id: string
+  race_number: number
+  name: string
+  distance: string | null
+  post_time: string | null
+  is_featured: boolean
+  featured_multiplier: number
+  status: 'upcoming' | 'open' | 'locked' | 'finished'
+}
+
+export type Horse = {
+  id: string
+  race_id: string
+  name: string
+  number: number
+  morning_line_odds: string | null
+  scratched: boolean
+  finish_position: number | null
+}
+
+export type Player = {
+  id: string
+  event_id: string
+  name: string
+  avatar: string
+  paid: boolean
+  multiplier_3x_race_id: string | null
+  multiplier_2x_race_id: string | null
+}
+
+export type Pick = {
+  id: string
+  player_id: string
+  race_id: string
+  event_id: string
+  win_horse_id: string | null
+  place_horse_id: string | null
+  show_horse_id: string | null
+}
+
+export type Score = {
+  id: string
+  player_id: string
+  race_id: string
+  event_id: string
+  base_points: number
+  multiplier_applied: number
+  final_points: number
+  win_correct: boolean
+  place_correct: boolean
+  show_correct: boolean
+}

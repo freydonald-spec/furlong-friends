@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx next *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"/ -> %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"/join -> %{http_code}\\\\n\" http://localhost:3000/join)",
+      "Bash(curl -s -o /dev/null -w \"/picks -> %{http_code}\\\\n\" http://localhost:3000/picks)",
+      "Bash(curl -s -o /dev/null -w \"/track -> %{http_code}\\\\n\" http://localhost:3000/track)",
+      "Bash(curl -s -o /dev/null -w \"/admin -> %{http_code}\\\\n\" http://localhost:3000/admin)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000__TRACKED_VAR__)"
+    ]
+  }
+}

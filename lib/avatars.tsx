@@ -1,0 +1,1017 @@
+import * as React from 'react'
+
+export type AvatarCategory = 'racing' | 'fashion' | 'drinks' | 'flora' | 'lifestyle' | 'fun'
+
+export type Avatar = {
+  id: string
+  label: string
+  category: AvatarCategory
+  /** Inner SVG markup — wrapped at render time in `<svg viewBox="0 0 60 60">`. */
+  svg: string
+}
+
+// Keeping all SVGs on a 60x60 viewBox. Each starts with a colored backdrop rect so
+// the avatars look like polished tokens and stay distinct at thumbnail size.
+
+export const AVATARS: Avatar[] = [
+  // ─── HORSES & RACING (1–4) ──────────────────────────────────────────────
+  {
+    id: 'avatar_01',
+    label: 'Chestnut Racer',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<rect x="0" y="48" width="60" height="12" fill="#5a3520"/>
+<g fill="#7c4a2c" stroke="#3a2010" stroke-width="0.5">
+  <ellipse cx="30" cy="34" rx="17" ry="7"/>
+  <path d="M44 30 L53 17 L57 22 L48 35 Z"/>
+  <ellipse cx="52" cy="20" rx="5" ry="4"/>
+</g>
+<path d="M43 25 L52 19 L49 32 Z" fill="#3a2010"/>
+<g fill="#7c4a2c" stroke="#3a2010" stroke-width="0.5">
+  <path d="M40 38 L52 51 L49 53 L36 40 Z"/>
+  <path d="M33 38 L46 51 L43 53 L30 40 Z"/>
+  <path d="M22 38 L10 51 L13 53 L26 40 Z"/>
+  <path d="M28 38 L16 51 L19 53 L32 40 Z"/>
+</g>
+<path d="M13 32 Q3 34 6 43 L14 36 Z" fill="#3a2010"/>
+<circle cx="53" cy="19" r="0.9" fill="#fff"/>
+<circle cx="55" cy="22" r="0.6" fill="#1a1a1a"/>`,
+  },
+  {
+    id: 'avatar_02',
+    label: 'Grey Mount',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<rect x="0" y="50" width="60" height="10" fill="#5a3520"/>
+<g fill="#a3a8b1" stroke="#6b7280" stroke-width="0.4">
+  <ellipse cx="28" cy="42" rx="17" ry="7"/>
+  <path d="M40 40 L49 30 L53 33 L45 44 Z"/>
+  <ellipse cx="50" cy="32" rx="4.5" ry="3.5"/>
+  <rect x="13" y="47" width="3" height="11" rx="1"/>
+  <rect x="21" y="47" width="3" height="11" rx="1"/>
+  <rect x="33" y="47" width="3" height="11" rx="1"/>
+  <rect x="41" y="47" width="3" height="11" rx="1"/>
+</g>
+<path d="M40 36 L48 32 L46 41 Z" fill="#fff"/>
+<path d="M13 40 Q4 42 6 49 L14 44 Z" fill="#fff"/>
+<path d="M22 28 L36 28 L34 38 L24 38 Z" fill="#8B1A2F"/>
+<rect x="22" y="31" width="14" height="2" fill="#C9A84C"/>
+<path d="M22 22 Q22 14 29 14 Q36 14 36 22 L36 26 L22 26 Z" fill="#8B1A2F"/>
+<rect x="22" y="22" width="14" height="2" fill="#C9A84C"/>
+<rect x="23" y="23" width="12" height="2" fill="#1a1a1a"/>
+<rect x="26" y="25.5" width="6" height="3" fill="#f5d0a9"/>
+<circle cx="51" cy="31" r="0.6" fill="#1a1a1a"/>`,
+  },
+  {
+    id: 'avatar_03',
+    label: 'Black Stallion',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<rect x="0" y="50" width="60" height="10" fill="#5a3520"/>
+<g fill="#1a1a1a" stroke="#000" stroke-width="0.4">
+  <ellipse cx="30" cy="36" rx="9" ry="14"/>
+  <path d="M30 18 L38 6 L42 10 L34 22 Z"/>
+  <ellipse cx="40" cy="9" rx="5" ry="4" transform="rotate(-15 40 9)"/>
+</g>
+<path d="M30 20 L40 8 L36 22 Z" fill="#3a3a3a"/>
+<path d="M28 22 L24 6 L21 22 Z" fill="#3a3a3a"/>
+<path d="M22 30 L10 22 L11 20 L24 28 Z" fill="#1a1a1a"/>
+<path d="M22 36 L8 30 L9 28 L24 34 Z" fill="#1a1a1a"/>
+<rect x="25" y="46" width="4" height="12" rx="1.5" fill="#1a1a1a"/>
+<rect x="32" y="46" width="4" height="12" rx="1.5" fill="#1a1a1a"/>
+<path d="M37 46 Q44 50 42 56 L36 50 Z" fill="#3a3a3a"/>
+<circle cx="42" cy="9" r="0.8" fill="#fff"/>
+<circle cx="43" cy="11" r="0.5" fill="#000"/>`,
+  },
+  {
+    id: 'avatar_04',
+    label: 'Garland Winner',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<rect x="0" y="50" width="60" height="10" fill="#5a3520"/>
+<g fill="#a47148" stroke="#5a3520" stroke-width="0.4">
+  <ellipse cx="28" cy="40" rx="17" ry="7"/>
+  <path d="M40 38 L48 26 L52 30 L44 41 Z"/>
+  <ellipse cx="49" cy="28" rx="5" ry="4"/>
+  <rect x="13" y="46" width="3" height="11" rx="1"/>
+  <rect x="21" y="46" width="3" height="11" rx="1"/>
+  <rect x="33" y="46" width="3" height="11" rx="1"/>
+  <rect x="41" y="46" width="3" height="11" rx="1"/>
+</g>
+<path d="M40 33 L48 28 L46 38 Z" fill="#3a2010"/>
+<path d="M13 38 Q5 40 7 47 L14 42 Z" fill="#3a2010"/>
+<g fill="#dc2626">
+  <circle cx="36" cy="38" r="3"/>
+  <circle cx="32" cy="40" r="3"/>
+  <circle cx="28" cy="40" r="3"/>
+  <circle cx="24" cy="40" r="3"/>
+  <circle cx="20" cy="38" r="3"/>
+  <circle cx="40" cy="35" r="2.5"/>
+</g>
+<g fill="#16a34a">
+  <ellipse cx="34" cy="35" rx="2" ry="1" transform="rotate(20 34 35)"/>
+  <ellipse cx="22" cy="36" rx="2" ry="1" transform="rotate(-20 22 36)"/>
+</g>
+<circle cx="50" cy="27" r="0.7" fill="#fff"/>
+<circle cx="51" cy="30" r="0.4" fill="#1a1a1a"/>`,
+  },
+
+  // ─── JOCKEYS (5–8) ──────────────────────────────────────────────────────
+  {
+    id: 'avatar_05',
+    label: 'Jockey · Red & White',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M16 56 L20 36 L40 36 L44 56 Z" fill="#dc2626"/>
+<rect x="20" y="36" width="4" height="20" fill="#fff"/>
+<rect x="28" y="36" width="4" height="20" fill="#fff"/>
+<rect x="36" y="36" width="4" height="20" fill="#fff"/>
+<path d="M30 8 Q18 8 18 22 L18 30 L42 30 L42 22 Q42 8 30 8 Z" fill="#dc2626"/>
+<rect x="18" y="22" width="24" height="4" fill="#fff"/>
+<rect x="20" y="25" width="20" height="4" rx="1" fill="#1a1a1a"/>
+<circle cx="25" cy="27" r="2" fill="#fff"/>
+<circle cx="35" cy="27" r="2" fill="#fff"/>
+<circle cx="25" cy="27" r="0.8" fill="#1a1a1a"/>
+<circle cx="35" cy="27" r="0.8" fill="#1a1a1a"/>
+<path d="M22 30 Q22 36 30 36 Q38 36 38 30 Z" fill="#f5d0a9"/>
+<path d="M28 32 L32 32 L30 35 Z" fill="#d97706"/>`,
+  },
+  {
+    id: 'avatar_06',
+    label: 'Jockey · Blue & Gold',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M16 56 L20 36 L40 36 L44 56 Z" fill="#1e3a8a"/>
+<polygon points="30,38 33,44 39,45 34,49 36,55 30,52 24,55 26,49 21,45 27,44" fill="#C9A84C"/>
+<path d="M30 8 Q18 8 18 22 L18 30 L42 30 L42 22 Q42 8 30 8 Z" fill="#1e3a8a"/>
+<polygon points="30,11 32,17 38,17 33,21 35,27 30,23 25,27 27,21 22,17 28,17" fill="#C9A84C"/>
+<rect x="20" y="25" width="20" height="4" rx="1" fill="#1a1a1a"/>
+<circle cx="25" cy="27" r="2" fill="#fff"/>
+<circle cx="35" cy="27" r="2" fill="#fff"/>
+<circle cx="25" cy="27" r="0.8" fill="#1a1a1a"/>
+<circle cx="35" cy="27" r="0.8" fill="#1a1a1a"/>
+<path d="M22 30 Q22 36 30 36 Q38 36 38 30 Z" fill="#f5d0a9"/>
+<path d="M28 32 L32 32 L30 35 Z" fill="#d97706"/>`,
+  },
+  {
+    id: 'avatar_07',
+    label: 'Jockey · Green',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M16 56 L20 36 L40 36 L44 56 Z" fill="#16a34a"/>
+<polygon points="22,42 26,40 30,42 26,44" fill="#fff"/>
+<polygon points="34,46 38,44 42,46 38,48" fill="#fff"/>
+<polygon points="22,52 26,50 30,52 26,54" fill="#fff"/>
+<path d="M30 8 Q18 8 18 22 L18 30 L42 30 L42 22 Q42 8 30 8 Z" fill="#16a34a"/>
+<polygon points="22,16 26,14 30,16 26,18" fill="#fff"/>
+<polygon points="32,20 36,18 40,20 36,22" fill="#fff"/>
+<rect x="20" y="25" width="20" height="4" rx="1" fill="#1a1a1a"/>
+<circle cx="25" cy="27" r="2" fill="#fff"/>
+<circle cx="35" cy="27" r="2" fill="#fff"/>
+<circle cx="25" cy="27" r="0.8" fill="#1a1a1a"/>
+<circle cx="35" cy="27" r="0.8" fill="#1a1a1a"/>
+<path d="M22 30 Q22 36 30 36 Q38 36 38 30 Z" fill="#f5d0a9"/>
+<path d="M28 32 L32 32 L30 35 Z" fill="#d97706"/>`,
+  },
+  {
+    id: 'avatar_08',
+    label: 'Jockey · Purple',
+    category: 'racing',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M16 56 L20 36 L40 36 L44 56 Z" fill="#7c3aed"/>
+<path d="M16 38 L20 38 L24 42 L20 46 L16 42 Z M44 38 L40 38 L36 42 L40 46 L44 42 Z M16 50 L20 50 L24 54 L20 56 L16 52 Z" fill="#fbbf24"/>
+<path d="M30 8 Q18 8 18 22 L18 30 L42 30 L42 22 Q42 8 30 8 Z" fill="#7c3aed"/>
+<path d="M18 14 L22 14 L26 18 L22 22 L18 18 Z M42 14 L38 14 L34 18 L38 22 L42 18 Z" fill="#fbbf24"/>
+<rect x="20" y="25" width="20" height="4" rx="1" fill="#1a1a1a"/>
+<circle cx="25" cy="27" r="2" fill="#fff"/>
+<circle cx="35" cy="27" r="2" fill="#fff"/>
+<circle cx="25" cy="27" r="0.8" fill="#1a1a1a"/>
+<circle cx="35" cy="27" r="0.8" fill="#1a1a1a"/>
+<path d="M22 30 Q22 36 30 36 Q38 36 38 30 Z" fill="#f5d0a9"/>
+<path d="M28 32 L32 32 L30 35 Z" fill="#d97706"/>`,
+  },
+
+  // ─── DERBY FASHION (9–16) ────────────────────────────────────────────────
+  {
+    id: 'avatar_09',
+    label: 'Pink Derby Hat',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fce7f3"/>
+<ellipse cx="30" cy="40" rx="26" ry="7" fill="#ec4899"/>
+<ellipse cx="30" cy="38" rx="26" ry="6" fill="#f472b6"/>
+<path d="M14 36 Q20 22 30 22 Q40 22 46 36 Z" fill="#ec4899"/>
+<path d="M14 36 Q20 22 30 22 Q40 22 46 36" fill="none" stroke="#be185d" stroke-width="1"/>
+<rect x="14" y="35" width="32" height="3" fill="#be185d"/>
+<g fill="#fff">
+  <circle cx="22" cy="22" r="3"/>
+  <circle cx="30" cy="18" r="3.5"/>
+  <circle cx="38" cy="22" r="3"/>
+</g>
+<g fill="#fbbf24">
+  <circle cx="22" cy="22" r="1"/>
+  <circle cx="30" cy="18" r="1.2"/>
+  <circle cx="38" cy="22" r="1"/>
+</g>
+<g fill="#16a34a">
+  <ellipse cx="26" cy="26" rx="2" ry="1" transform="rotate(-30 26 26)"/>
+  <ellipse cx="34" cy="26" rx="2" ry="1" transform="rotate(30 34 26)"/>
+</g>`,
+  },
+  {
+    id: 'avatar_10',
+    label: 'Blue Fascinator',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fce7f3"/>
+<ellipse cx="30" cy="44" rx="14" ry="3" fill="#1e3a8a"/>
+<path d="M22 44 Q22 30 30 30 Q38 30 38 44 Z" fill="#1e3a8a"/>
+<path d="M22 44 Q22 30 30 30 Q38 30 38 44" fill="none" stroke="#1e2a5e" stroke-width="0.6"/>
+<rect x="22" y="40" width="16" height="3" fill="#C9A84C"/>
+<g fill="#1e3a8a">
+  <path d="M30 30 Q22 14 18 12 Q22 16 24 26 Z"/>
+  <path d="M30 30 Q34 14 38 10 Q36 18 32 26 Z"/>
+  <path d="M30 30 Q40 18 46 18 Q40 22 34 28 Z"/>
+</g>
+<g fill="#fff">
+  <ellipse cx="22" cy="20" rx="1.5" ry="3" transform="rotate(-25 22 20)"/>
+  <ellipse cx="38" cy="18" rx="1.5" ry="3" transform="rotate(20 38 18)"/>
+</g>
+<circle cx="32" cy="34" r="2" fill="#C9A84C"/>
+<circle cx="32" cy="34" r="1" fill="#fef3c7"/>`,
+  },
+  {
+    id: 'avatar_11',
+    label: 'Blue Seersucker Suit',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M14 18 L24 14 L36 14 L46 18 L46 56 L14 56 Z" fill="#bfdbfe"/>
+<g stroke="#1e40af" stroke-width="0.7">
+  <line x1="18" y1="20" x2="18" y2="56"/>
+  <line x1="22" y1="18" x2="22" y2="56"/>
+  <line x1="26" y1="16" x2="26" y2="56"/>
+  <line x1="34" y1="16" x2="34" y2="56"/>
+  <line x1="38" y1="18" x2="38" y2="56"/>
+  <line x1="42" y1="20" x2="42" y2="56"/>
+</g>
+<path d="M24 14 L30 26 L36 14 L36 22 L30 28 L24 22 Z" fill="#fef3c7"/>
+<path d="M28 16 L30 30 L32 16 Z" fill="#1e3a8a"/>
+<polygon points="26,24 34,24 32,28 28,28" fill="#dc2626"/>
+<circle cx="30" cy="36" r="1" fill="#1e40af"/>
+<circle cx="30" cy="44" r="1" fill="#1e40af"/>
+<circle cx="30" cy="52" r="1" fill="#1e40af"/>
+<rect x="40" y="38" width="4" height="8" fill="#1e3a8a"/>`,
+  },
+  {
+    id: 'avatar_12',
+    label: 'Patterned Bow Tie',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M30 30 L8 18 L8 42 L30 30 Z" fill="#8B1A2F"/>
+<path d="M30 30 L52 18 L52 42 L30 30 Z" fill="#8B1A2F"/>
+<rect x="26" y="24" width="8" height="12" rx="1" fill="#5a0f1d"/>
+<g fill="#C9A84C">
+  <circle cx="14" cy="24" r="1.5"/>
+  <circle cx="20" cy="30" r="1.5"/>
+  <circle cx="14" cy="36" r="1.5"/>
+  <circle cx="46" cy="24" r="1.5"/>
+  <circle cx="40" cy="30" r="1.5"/>
+  <circle cx="46" cy="36" r="1.5"/>
+</g>
+<g fill="#fff">
+  <circle cx="20" cy="22" r="0.8"/>
+  <circle cx="14" cy="30" r="0.8"/>
+  <circle cx="20" cy="38" r="0.8"/>
+  <circle cx="40" cy="22" r="0.8"/>
+  <circle cx="46" cy="30" r="0.8"/>
+  <circle cx="40" cy="38" r="0.8"/>
+</g>
+<line x1="30" y1="6" x2="30" y2="22" stroke="#1a1a1a" stroke-width="2"/>
+<line x1="22" y1="48" x2="38" y2="48" stroke="#1a1a1a" stroke-width="2"/>`,
+  },
+  {
+    id: 'avatar_13',
+    label: 'Pink Seersucker Suit',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M14 18 L24 14 L36 14 L46 18 L46 56 L14 56 Z" fill="#fbcfe8"/>
+<g stroke="#be185d" stroke-width="0.7">
+  <line x1="18" y1="20" x2="18" y2="56"/>
+  <line x1="22" y1="18" x2="22" y2="56"/>
+  <line x1="26" y1="16" x2="26" y2="56"/>
+  <line x1="34" y1="16" x2="34" y2="56"/>
+  <line x1="38" y1="18" x2="38" y2="56"/>
+  <line x1="42" y1="20" x2="42" y2="56"/>
+</g>
+<path d="M24 14 L30 26 L36 14 L36 22 L30 28 L24 22 Z" fill="#fef3c7"/>
+<path d="M28 16 L30 30 L32 16 Z" fill="#16a34a"/>
+<polygon points="26,24 34,24 32,28 28,28" fill="#1e3a8a"/>
+<circle cx="30" cy="36" r="1" fill="#be185d"/>
+<circle cx="30" cy="44" r="1" fill="#be185d"/>
+<circle cx="30" cy="52" r="1" fill="#be185d"/>
+<g fill="#fff">
+  <circle cx="42" cy="40" r="2"/>
+  <circle cx="42" cy="40" r="1" fill="#fbbf24"/>
+</g>`,
+  },
+  {
+    id: 'avatar_14',
+    label: 'Top Hat & Monocle',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<ellipse cx="30" cy="32" rx="20" ry="3" fill="#1a1a1a"/>
+<rect x="16" y="10" width="28" height="22" fill="#1a1a1a"/>
+<rect x="16" y="10" width="28" height="22" fill="none" stroke="#000" stroke-width="0.5"/>
+<rect x="16" y="22" width="28" height="4" fill="#8B1A2F"/>
+<rect x="16" y="22" width="28" height="4" fill="none" stroke="#5a0f1d" stroke-width="0.5"/>
+<polygon points="20,26 24,22 22,26" fill="#C9A84C"/>
+<path d="M22 38 Q22 50 30 50 Q38 50 38 38 Z" fill="#f5d0a9"/>
+<circle cx="36" cy="42" r="5" fill="none" stroke="#1a1a1a" stroke-width="1.4"/>
+<circle cx="36" cy="42" r="4" fill="#dbeafe" opacity="0.6"/>
+<circle cx="36" cy="42" r="1" fill="#1a1a1a"/>
+<line x1="40" y1="46" x2="44" y2="56" stroke="#1a1a1a" stroke-width="1"/>
+<path d="M24 44 Q26 46 28 44" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>
+<path d="M26 48 Q30 52 34 48" fill="none" stroke="#1a1a1a" stroke-width="1"/>
+<path d="M34 18 Q42 14 50 18" fill="none" stroke="#3a2010" stroke-width="2"/>`,
+  },
+  {
+    id: 'avatar_15',
+    label: 'Suspenders & Pocket Watch',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<rect x="14" y="14" width="32" height="42" fill="#fff"/>
+<rect x="14" y="14" width="32" height="42" fill="none" stroke="#d6d3d1" stroke-width="0.5"/>
+<g fill="#8B1A2F">
+  <path d="M18 14 L42 56 L46 56 L22 14 Z"/>
+  <path d="M42 14 L18 56 L22 56 L46 14 Z"/>
+</g>
+<rect x="26" y="14" width="8" height="4" fill="#1a1a1a"/>
+<g>
+  <circle cx="42" cy="32" r="6" fill="#C9A84C" stroke="#a87f1c" stroke-width="0.8"/>
+  <circle cx="42" cy="32" r="4.5" fill="#fef3c7"/>
+  <line x1="42" y1="32" x2="42" y2="29" stroke="#1a1a1a" stroke-width="1"/>
+  <line x1="42" y1="32" x2="44" y2="32" stroke="#1a1a1a" stroke-width="1"/>
+  <circle cx="42" cy="32" r="0.6" fill="#1a1a1a"/>
+  <line x1="42" y1="26" x2="42" y2="20" stroke="#C9A84C" stroke-width="1.2"/>
+  <line x1="42" y1="20" x2="38" y2="18" stroke="#C9A84C" stroke-width="1.2"/>
+  <rect x="36" y="16" width="4" height="3" fill="#C9A84C"/>
+</g>
+<g fill="#1a1a1a">
+  <circle cx="22" cy="22" r="1"/>
+  <circle cx="22" cy="32" r="1"/>
+  <circle cx="22" cy="42" r="1"/>
+</g>`,
+  },
+  {
+    id: 'avatar_16',
+    label: 'Gloves & Pearls',
+    category: 'fashion',
+    svg: `<rect width="60" height="60" rx="8" fill="#fce7f3"/>
+<g fill="#fff" stroke="#9ca3af" stroke-width="0.6">
+  <path d="M10 28 L18 24 L22 30 L28 26 L26 36 L20 50 L10 50 Z"/>
+  <path d="M50 28 L42 24 L38 30 L32 26 L34 36 L40 50 L50 50 Z"/>
+</g>
+<g stroke="#fef3c7" stroke-width="0.5" fill="none">
+  <line x1="14" y1="32" x2="20" y2="40"/>
+  <line x1="46" y1="32" x2="40" y2="40"/>
+</g>
+<g fill="#fef3c7" stroke="#d4d4d8" stroke-width="0.4">
+  <circle cx="18" cy="14" r="2"/>
+  <circle cx="24" cy="11" r="2.2"/>
+  <circle cx="30" cy="10" r="2.4"/>
+  <circle cx="36" cy="11" r="2.2"/>
+  <circle cx="42" cy="14" r="2"/>
+</g>
+<g fill="#fff" opacity="0.6">
+  <circle cx="17.5" cy="13.5" r="0.6"/>
+  <circle cx="23.5" cy="10.5" r="0.6"/>
+  <circle cx="29.5" cy="9.5" r="0.7"/>
+  <circle cx="35.5" cy="10.5" r="0.6"/>
+  <circle cx="41.5" cy="13.5" r="0.6"/>
+</g>
+<path d="M18 14 Q30 22 42 14" stroke="#fef3c7" stroke-width="0.6" fill="none"/>`,
+  },
+
+  // ─── DRINKS (17–22) ──────────────────────────────────────────────────────
+  {
+    id: 'avatar_17',
+    label: 'Mint Julep',
+    category: 'drinks',
+    svg: `<rect width="60" height="60" rx="8" fill="#3a2010"/>
+<path d="M18 22 L42 22 L40 52 Q40 56 36 56 L24 56 Q20 56 20 52 Z" fill="#d4d4d8"/>
+<path d="M18 22 L42 22 L40 52 Q40 56 36 56 L24 56 Q20 56 20 52 Z" fill="none" stroke="#a8a29e" stroke-width="0.8"/>
+<path d="M22 26 L38 26 L36 30 L24 30 Z" fill="#fff" opacity="0.4"/>
+<rect x="20" y="20" width="22" height="3" rx="1.5" fill="#a8a29e"/>
+<g fill="#16a34a">
+  <ellipse cx="28" cy="14" rx="3" ry="5" transform="rotate(-30 28 14)"/>
+  <ellipse cx="32" cy="12" rx="3" ry="5"/>
+  <ellipse cx="36" cy="14" rx="3" ry="5" transform="rotate(30 36 14)"/>
+</g>
+<g stroke="#15803d" stroke-width="0.4" fill="none">
+  <line x1="28" y1="14" x2="29" y2="20"/>
+  <line x1="32" y1="12" x2="32" y2="20"/>
+  <line x1="36" y1="14" x2="35" y2="20"/>
+</g>
+<rect x="38" y="10" width="2" height="34" rx="1" fill="#fbbf24"/>
+<circle cx="39" cy="9" r="2" fill="#fbbf24"/>`,
+  },
+  {
+    id: 'avatar_18',
+    label: 'Bourbon Neat',
+    category: 'drinks',
+    svg: `<rect width="60" height="60" rx="8" fill="#3a2010"/>
+<path d="M16 24 L44 24 L42 54 L18 54 Z" fill="#fef3c7" opacity="0.25"/>
+<path d="M16 24 L44 24 L42 54 L18 54 Z" fill="none" stroke="#fef3c7" stroke-width="1.2"/>
+<path d="M17 38 L43 38 L42 54 L18 54 Z" fill="#a16207"/>
+<path d="M17 38 L43 38 L41 42 L19 42 Z" fill="#d97706" opacity="0.7"/>
+<g fill="#dbeafe" opacity="0.85" stroke="#fff" stroke-width="0.4">
+  <rect x="22" y="42" width="6" height="6" rx="1"/>
+  <rect x="32" y="44" width="6" height="6" rx="1"/>
+  <rect x="26" y="48" width="6" height="6" rx="1"/>
+</g>
+<path d="M18 30 Q22 26 26 30" stroke="#fff" stroke-width="0.6" fill="none" opacity="0.6"/>`,
+  },
+  {
+    id: 'avatar_19',
+    label: 'Champagne Flute',
+    category: 'drinks',
+    svg: `<rect width="60" height="60" rx="8" fill="#3a2010"/>
+<path d="M22 8 L38 8 L36 30 Q36 38 30 40 Q24 38 24 30 Z" fill="#fef3c7" opacity="0.3"/>
+<path d="M22 8 L38 8 L36 30 Q36 38 30 40 Q24 38 24 30 Z" fill="none" stroke="#fef3c7" stroke-width="1"/>
+<path d="M24 18 L36 18 L35 30 Q35 36 30 38 Q25 36 25 30 Z" fill="#fbbf24" opacity="0.8"/>
+<g fill="#fff">
+  <circle cx="28" cy="22" r="0.8"/>
+  <circle cx="32" cy="20" r="0.6"/>
+  <circle cx="30" cy="26" r="0.7"/>
+  <circle cx="33" cy="28" r="0.5"/>
+  <circle cx="27" cy="30" r="0.6"/>
+  <circle cx="31" cy="14" r="0.4"/>
+  <circle cx="29" cy="11" r="0.4"/>
+</g>
+<rect x="29" y="40" width="2" height="14" fill="#fef3c7" opacity="0.5"/>
+<rect x="29" y="40" width="2" height="14" fill="none" stroke="#fef3c7" stroke-width="0.6"/>
+<ellipse cx="30" cy="55" rx="10" ry="2" fill="#fef3c7" opacity="0.4"/>
+<ellipse cx="30" cy="55" rx="10" ry="2" fill="none" stroke="#fef3c7" stroke-width="0.8"/>`,
+  },
+  {
+    id: 'avatar_20',
+    label: 'Bourbon Bottle',
+    category: 'drinks',
+    svg: `<rect width="60" height="60" rx="8" fill="#3a2010"/>
+<rect x="26" y="6" width="8" height="10" rx="1" fill="#1a1a1a"/>
+<rect x="24" y="15" width="12" height="4" rx="1" fill="#1a1a1a"/>
+<path d="M22 19 L38 19 L40 26 L40 56 L20 56 L20 26 Z" fill="#a16207"/>
+<path d="M22 19 L38 19 L40 26 L40 56 L20 56 L20 26 Z" fill="none" stroke="#5a3520" stroke-width="0.8"/>
+<rect x="22" y="32" width="16" height="18" rx="1" fill="#fef3c7"/>
+<rect x="22" y="32" width="16" height="18" rx="1" fill="none" stroke="#5a3520" stroke-width="0.5"/>
+<text x="30" y="42" font-size="6" font-family="serif" font-weight="bold" fill="#8B1A2F" text-anchor="middle">DERBY</text>
+<text x="30" y="48" font-size="4" font-family="serif" fill="#5a0f1d" text-anchor="middle">BOURBON</text>
+<rect x="22" y="22" width="16" height="2" fill="#C9A84C"/>
+<path d="M22 22 L38 22" stroke="#fef3c7" stroke-width="0.4" opacity="0.7"/>`,
+  },
+  {
+    id: 'avatar_21',
+    label: 'Sweet Tea',
+    category: 'drinks',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<rect x="16" y="16" width="28" height="40" rx="2" fill="#fef3c7" opacity="0.4"/>
+<rect x="16" y="16" width="28" height="40" rx="2" fill="none" stroke="#a8a29e" stroke-width="1"/>
+<rect x="14" y="14" width="32" height="6" rx="2" fill="#a8a29e"/>
+<rect x="14" y="14" width="32" height="6" rx="2" fill="none" stroke="#78716c" stroke-width="0.6"/>
+<path d="M18 28 L42 28 L41 54 L19 54 Z" fill="#a16207"/>
+<g fill="#dbeafe" stroke="#fff" stroke-width="0.4">
+  <rect x="22" y="30" width="5" height="5" rx="0.8"/>
+  <rect x="32" y="32" width="5" height="5" rx="0.8"/>
+  <rect x="26" y="38" width="5" height="5" rx="0.8"/>
+</g>
+<g fill="#facc15" stroke="#ca8a04" stroke-width="0.5">
+  <ellipse cx="40" cy="26" rx="6" ry="3"/>
+</g>
+<g stroke="#ca8a04" stroke-width="0.4">
+  <line x1="35" y1="26" x2="45" y2="26"/>
+  <line x1="40" y1="23" x2="40" y2="29"/>
+</g>
+<rect x="34" y="10" width="1.5" height="22" rx="0.5" fill="#16a34a"/>`,
+  },
+  {
+    id: 'avatar_22',
+    label: 'Cocktail Shaker',
+    category: 'drinks',
+    svg: `<rect width="60" height="60" rx="8" fill="#3a2010"/>
+<path d="M22 56 L20 24 L40 24 L38 56 Z" fill="#d4d4d8"/>
+<path d="M22 56 L20 24 L40 24 L38 56 Z" fill="none" stroke="#a8a29e" stroke-width="0.8"/>
+<path d="M24 28 L36 28 L34 36 L26 36 Z" fill="#fff" opacity="0.4"/>
+<rect x="18" y="20" width="24" height="6" rx="2" fill="#a8a29e"/>
+<rect x="18" y="20" width="24" height="6" rx="2" fill="none" stroke="#78716c" stroke-width="0.6"/>
+<rect x="22" y="14" width="16" height="8" rx="2" fill="#d4d4d8"/>
+<rect x="22" y="14" width="16" height="8" rx="2" fill="none" stroke="#78716c" stroke-width="0.6"/>
+<ellipse cx="30" cy="12" rx="6" ry="2" fill="#a8a29e"/>
+<g stroke="#fff" stroke-width="0.4" opacity="0.5">
+  <line x1="24" y1="40" x2="36" y2="40"/>
+  <line x1="24" y1="46" x2="36" y2="46"/>
+  <line x1="25" y1="52" x2="35" y2="52"/>
+</g>`,
+  },
+
+  // ─── FLORA & CEREMONY (23–28) ────────────────────────────────────────────
+  {
+    id: 'avatar_23',
+    label: 'Red Rose Bouquet',
+    category: 'flora',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<g fill="#dc2626" stroke="#7f1d1d" stroke-width="0.4">
+  <circle cx="22" cy="22" r="6"/>
+  <circle cx="38" cy="22" r="6"/>
+  <circle cx="30" cy="14" r="6"/>
+  <circle cx="30" cy="26" r="6"/>
+  <circle cx="18" cy="32" r="5"/>
+  <circle cx="42" cy="32" r="5"/>
+</g>
+<g fill="#7f1d1d">
+  <circle cx="22" cy="22" r="1.5"/>
+  <circle cx="38" cy="22" r="1.5"/>
+  <circle cx="30" cy="14" r="1.5"/>
+  <circle cx="30" cy="26" r="1.5"/>
+</g>
+<g fill="#16a34a" stroke="#14532d" stroke-width="0.3">
+  <ellipse cx="14" cy="36" rx="3" ry="1.5" transform="rotate(-30 14 36)"/>
+  <ellipse cx="46" cy="36" rx="3" ry="1.5" transform="rotate(30 46 36)"/>
+  <ellipse cx="22" cy="36" rx="2.5" ry="1.2" transform="rotate(-15 22 36)"/>
+  <ellipse cx="38" cy="36" rx="2.5" ry="1.2" transform="rotate(15 38 36)"/>
+</g>
+<path d="M24 38 L20 56 L40 56 L36 38 Z" fill="#C9A84C"/>
+<path d="M24 38 L20 56 L40 56 L36 38" fill="none" stroke="#a87f1c" stroke-width="0.5"/>
+<line x1="22" y1="48" x2="38" y2="48" stroke="#a87f1c" stroke-width="0.5"/>`,
+  },
+  {
+    id: 'avatar_24',
+    label: 'Horseshoe of Roses',
+    category: 'flora',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<path d="M14 20 Q14 50 30 52 Q46 50 46 20 L40 20 Q40 46 30 46 Q20 46 20 20 Z" fill="#C9A84C" stroke="#a87f1c" stroke-width="0.8"/>
+<g fill="#1a1a1a">
+  <circle cx="14" cy="22" r="0.9"/>
+  <circle cx="20" cy="22" r="0.9"/>
+  <circle cx="40" cy="22" r="0.9"/>
+  <circle cx="46" cy="22" r="0.9"/>
+  <circle cx="16" cy="46" r="0.9"/>
+  <circle cx="44" cy="46" r="0.9"/>
+</g>
+<g fill="#dc2626" stroke="#7f1d1d" stroke-width="0.3">
+  <circle cx="17" cy="18" r="3.5"/>
+  <circle cx="25" cy="14" r="3.5"/>
+  <circle cx="35" cy="14" r="3.5"/>
+  <circle cx="43" cy="18" r="3.5"/>
+</g>
+<g fill="#7f1d1d">
+  <circle cx="17" cy="18" r="1"/>
+  <circle cx="25" cy="14" r="1"/>
+  <circle cx="35" cy="14" r="1"/>
+  <circle cx="43" cy="18" r="1"/>
+</g>
+<g fill="#16a34a">
+  <ellipse cx="13" cy="14" rx="2.5" ry="1.2" transform="rotate(-30 13 14)"/>
+  <ellipse cx="47" cy="14" rx="2.5" ry="1.2" transform="rotate(30 47 14)"/>
+  <ellipse cx="30" cy="10" rx="2.5" ry="1.2"/>
+</g>`,
+  },
+  {
+    id: 'avatar_25',
+    label: 'Single Red Rose',
+    category: 'flora',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<g fill="#dc2626" stroke="#7f1d1d" stroke-width="0.5">
+  <circle cx="30" cy="20" r="11"/>
+</g>
+<g fill="#7f1d1d">
+  <path d="M26 14 Q30 12 34 14 Q34 18 30 18 Q26 18 26 14 Z"/>
+  <path d="M22 22 Q26 26 30 26 Q26 22 22 22 Z"/>
+  <path d="M38 22 Q34 26 30 26 Q34 22 38 22 Z"/>
+  <circle cx="30" cy="20" r="2"/>
+</g>
+<line x1="30" y1="30" x2="30" y2="56" stroke="#16a34a" stroke-width="2"/>
+<g fill="#16a34a" stroke="#14532d" stroke-width="0.4">
+  <path d="M30 38 Q20 38 18 44 Q26 44 30 42 Z"/>
+  <path d="M30 46 Q40 46 42 52 Q34 52 30 50 Z"/>
+</g>
+<g fill="#15803d">
+  <circle cx="22" cy="36" r="0.8"/>
+  <circle cx="38" cy="48" r="0.8"/>
+</g>`,
+  },
+  {
+    id: 'avatar_26',
+    label: 'Lily Flowers',
+    category: 'flora',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<g fill="#fff" stroke="#d4d4d8" stroke-width="0.6">
+  <path d="M30 12 L24 22 L36 22 Z"/>
+  <path d="M30 12 L20 18 L26 24 Z"/>
+  <path d="M30 12 L40 18 L34 24 Z"/>
+  <path d="M30 12 L26 26 L34 26 Z"/>
+</g>
+<g fill="#fbbf24">
+  <ellipse cx="28" cy="20" rx="0.7" ry="2"/>
+  <ellipse cx="32" cy="20" rx="0.7" ry="2"/>
+  <ellipse cx="30" cy="18" rx="0.7" ry="2"/>
+</g>
+<line x1="30" y1="22" x2="30" y2="50" stroke="#16a34a" stroke-width="2"/>
+<g fill="#fff" stroke="#d4d4d8" stroke-width="0.4">
+  <path d="M16 36 L12 42 L20 42 Z"/>
+  <path d="M16 36 L10 40 L14 44 Z"/>
+  <path d="M16 36 L22 40 L18 44 Z"/>
+</g>
+<g fill="#fff" stroke="#d4d4d8" stroke-width="0.4">
+  <path d="M44 40 L40 46 L48 46 Z"/>
+  <path d="M44 40 L38 44 L42 48 Z"/>
+  <path d="M44 40 L50 44 L46 48 Z"/>
+</g>
+<line x1="16" y1="42" x2="30" y2="40" stroke="#16a34a" stroke-width="1.2"/>
+<line x1="44" y1="46" x2="30" y2="44" stroke="#16a34a" stroke-width="1.2"/>
+<g fill="#fbbf24">
+  <circle cx="16" cy="40" r="0.6"/>
+  <circle cx="44" cy="44" r="0.6"/>
+</g>`,
+  },
+  {
+    id: 'avatar_27',
+    label: 'Kentucky Bluegrass',
+    category: 'flora',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<rect x="0" y="48" width="60" height="12" fill="#7c4a2c"/>
+<g fill="#3b82f6" stroke="#1e40af" stroke-width="0.4">
+  <path d="M8 50 Q6 32 10 14 L12 14 Q14 32 12 50 Z"/>
+  <path d="M16 50 Q12 28 18 8 L20 8 Q22 28 20 50 Z"/>
+  <path d="M22 50 Q22 30 26 18 L28 18 Q26 30 26 50 Z"/>
+  <path d="M30 50 Q28 28 34 10 L36 10 Q34 28 34 50 Z"/>
+  <path d="M38 50 Q40 30 42 16 L44 16 Q40 30 42 50 Z"/>
+  <path d="M44 50 Q42 28 50 12 L52 12 Q44 28 48 50 Z"/>
+</g>
+<g fill="#1d4ed8" opacity="0.5">
+  <ellipse cx="10" cy="20" rx="1" ry="3"/>
+  <ellipse cx="20" cy="14" rx="1" ry="3"/>
+  <ellipse cx="34" cy="16" rx="1" ry="3"/>
+  <ellipse cx="44" cy="22" rx="1" ry="3"/>
+  <ellipse cx="50" cy="18" rx="1" ry="3"/>
+</g>`,
+  },
+  {
+    id: 'avatar_28',
+    label: 'Winner\'s Wreath',
+    category: 'flora',
+    svg: `<rect width="60" height="60" rx="8" fill="#fef3c7"/>
+<circle cx="30" cy="32" r="20" fill="none" stroke="#16a34a" stroke-width="3"/>
+<g fill="#16a34a" stroke="#14532d" stroke-width="0.4">
+  <ellipse cx="14" cy="22" rx="3" ry="1.5" transform="rotate(-45 14 22)"/>
+  <ellipse cx="10" cy="32" rx="3" ry="1.5" transform="rotate(0 10 32)"/>
+  <ellipse cx="14" cy="42" rx="3" ry="1.5" transform="rotate(45 14 42)"/>
+  <ellipse cx="22" cy="50" rx="3" ry="1.5" transform="rotate(75 22 50)"/>
+  <ellipse cx="38" cy="50" rx="3" ry="1.5" transform="rotate(-75 38 50)"/>
+  <ellipse cx="46" cy="42" rx="3" ry="1.5" transform="rotate(-45 46 42)"/>
+  <ellipse cx="50" cy="32" rx="3" ry="1.5" transform="rotate(0 50 32)"/>
+  <ellipse cx="46" cy="22" rx="3" ry="1.5" transform="rotate(45 46 22)"/>
+  <ellipse cx="22" cy="14" rx="3" ry="1.5" transform="rotate(-75 22 14)"/>
+  <ellipse cx="38" cy="14" rx="3" ry="1.5" transform="rotate(75 38 14)"/>
+</g>
+<path d="M22 50 L26 58 M38 50 L34 58" stroke="#dc2626" stroke-width="2"/>
+<polygon points="30,28 32,34 38,34 33,38 35,44 30,40 25,44 27,38 22,34 28,34" fill="#C9A84C" stroke="#a87f1c" stroke-width="0.5"/>`,
+  },
+
+  // ─── LIFESTYLE & ACCESSORIES (29–34) ─────────────────────────────────────
+  {
+    id: 'avatar_29',
+    label: 'Cigar with Smoke',
+    category: 'lifestyle',
+    svg: `<rect width="60" height="60" rx="8" fill="#1a1a1a"/>
+<rect x="4" y="34" width="46" height="6" rx="3" fill="#7c4a2c" stroke="#3a2010" stroke-width="0.5"/>
+<rect x="4" y="34" width="10" height="6" fill="#5a3520"/>
+<rect x="44" y="34" width="6" height="6" fill="#fbbf24"/>
+<circle cx="50" cy="37" r="2" fill="#dc2626"/>
+<circle cx="51" cy="36" r="0.8" fill="#fef3c7"/>
+<g fill="none" stroke="#9ca3af" stroke-width="1.5" opacity="0.6">
+  <path d="M52 32 Q56 28 54 22"/>
+  <path d="M54 24 Q50 20 54 16"/>
+  <path d="M52 18 Q56 14 52 10"/>
+</g>
+<g fill="#9ca3af" opacity="0.4">
+  <circle cx="50" cy="28" r="1.5"/>
+  <circle cx="56" cy="22" r="2"/>
+  <circle cx="50" cy="14" r="2"/>
+  <circle cx="54" cy="8" r="2.5"/>
+</g>
+<line x1="14" y1="34" x2="14" y2="40" stroke="#3a2010" stroke-width="0.8"/>
+<line x1="20" y1="34" x2="20" y2="40" stroke="#3a2010" stroke-width="0.4"/>`,
+  },
+  {
+    id: 'avatar_30',
+    label: 'Gold Pocket Watch',
+    category: 'lifestyle',
+    svg: `<rect width="60" height="60" rx="8" fill="#1a1a1a"/>
+<g stroke="#a87f1c" stroke-width="0.6" fill="#C9A84C">
+  <rect x="28" y="6" width="4" height="4" rx="1"/>
+  <line x1="30" y1="10" x2="30" y2="14"/>
+</g>
+<circle cx="30" cy="32" r="18" fill="#C9A84C" stroke="#a87f1c" stroke-width="1.4"/>
+<circle cx="30" cy="32" r="14" fill="#fef3c7" stroke="#a87f1c" stroke-width="0.6"/>
+<g font-family="serif" font-size="3.5" font-weight="bold" fill="#1a1a1a" text-anchor="middle">
+  <text x="30" y="22">XII</text>
+  <text x="42" y="33">III</text>
+  <text x="30" y="46">VI</text>
+  <text x="18" y="33">IX</text>
+</g>
+<g fill="#1a1a1a" stroke="#1a1a1a">
+  <line x1="30" y1="32" x2="30" y2="24" stroke-width="1.5"/>
+  <line x1="30" y1="32" x2="38" y2="34" stroke-width="1"/>
+</g>
+<circle cx="30" cy="32" r="1.2" fill="#8B1A2F"/>
+<g stroke="#C9A84C" stroke-width="1.5" fill="none">
+  <path d="M48 18 L54 12 L52 16 L56 12"/>
+</g>
+<g fill="#fff" opacity="0.4">
+  <ellipse cx="22" cy="22" rx="3" ry="2"/>
+</g>`,
+  },
+  {
+    id: 'avatar_31',
+    label: 'Binoculars',
+    category: 'lifestyle',
+    svg: `<rect width="60" height="60" rx="8" fill="#1a1a1a"/>
+<rect x="22" y="20" width="16" height="6" rx="1" fill="#3a3a3a"/>
+<g fill="#3a3a3a" stroke="#000" stroke-width="0.6">
+  <rect x="6" y="20" width="20" height="28" rx="4"/>
+  <rect x="34" y="20" width="20" height="28" rx="4"/>
+</g>
+<g fill="#1a1a1a" stroke="#000" stroke-width="0.6">
+  <rect x="8" y="24" width="16" height="20" rx="3"/>
+  <rect x="36" y="24" width="16" height="20" rx="3"/>
+</g>
+<g fill="#3b82f6" opacity="0.7">
+  <circle cx="16" cy="34" r="6"/>
+  <circle cx="44" cy="34" r="6"/>
+</g>
+<g fill="#fff" opacity="0.7">
+  <circle cx="13" cy="31" r="1.5"/>
+  <circle cx="41" cy="31" r="1.5"/>
+</g>
+<g fill="none" stroke="#C9A84C" stroke-width="0.6">
+  <circle cx="16" cy="34" r="6"/>
+  <circle cx="44" cy="34" r="6"/>
+</g>
+<rect x="6" y="46" width="20" height="3" rx="1" fill="#000"/>
+<rect x="34" y="46" width="20" height="3" rx="1" fill="#000"/>
+<line x1="22" y1="22" x2="38" y2="22" stroke="#C9A84C" stroke-width="0.8"/>`,
+  },
+  {
+    id: 'avatar_32',
+    label: 'Money Bag',
+    category: 'lifestyle',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<path d="M18 22 Q14 36 14 46 Q14 56 30 56 Q46 56 46 46 Q46 36 42 22 Z" fill="#C9A84C" stroke="#a87f1c" stroke-width="0.8"/>
+<path d="M18 22 Q14 36 14 46 Q14 56 30 56 Q46 56 46 46 Q46 36 42 22 Z" fill="none" stroke="#a87f1c" stroke-width="0.8"/>
+<rect x="18" y="14" width="24" height="10" rx="1" fill="#a87f1c"/>
+<path d="M14 24 Q30 20 46 24 L42 26 Q30 24 18 26 Z" fill="#a87f1c"/>
+<g stroke="#fff" stroke-width="0.4" fill="none" opacity="0.4">
+  <path d="M18 30 Q22 36 26 30"/>
+  <path d="M34 36 Q38 42 42 36"/>
+</g>
+<text x="30" y="46" font-size="20" font-family="serif" font-weight="bold" fill="#1B4332" text-anchor="middle">$</text>
+<g fill="#C9A84C">
+  <rect x="22" y="6" width="3" height="14" rx="0.5"/>
+  <rect x="28" y="6" width="3" height="14" rx="0.5"/>
+  <rect x="35" y="6" width="3" height="14" rx="0.5"/>
+</g>`,
+  },
+  {
+    id: 'avatar_33',
+    label: 'Gold Trophy Cup',
+    category: 'lifestyle',
+    svg: `<rect width="60" height="60" rx="8" fill="#1a1a1a"/>
+<path d="M16 12 L44 12 L44 30 Q44 38 30 38 Q16 38 16 30 Z" fill="#C9A84C" stroke="#a87f1c" stroke-width="0.8"/>
+<g fill="none" stroke="#a87f1c" stroke-width="2.5">
+  <path d="M16 16 Q4 16 4 24 Q4 32 12 30"/>
+  <path d="M44 16 Q56 16 56 24 Q56 32 48 30"/>
+</g>
+<rect x="24" y="38" width="12" height="4" fill="#a87f1c"/>
+<rect x="20" y="42" width="20" height="4" rx="1" fill="#C9A84C" stroke="#a87f1c" stroke-width="0.5"/>
+<rect x="14" y="46" width="32" height="6" rx="1" fill="#7c4a2c" stroke="#3a2010" stroke-width="0.5"/>
+<text x="30" y="51" font-size="3.5" font-family="serif" font-weight="bold" fill="#C9A84C" text-anchor="middle">DERBY</text>
+<g fill="#fef3c7" opacity="0.5">
+  <ellipse cx="22" cy="22" rx="2.5" ry="6"/>
+</g>
+<polygon points="30,18 32,24 38,24 33,28 35,34 30,30 25,34 27,28 22,24 28,24" fill="#fef3c7" opacity="0.6"/>
+<polygon points="30,18 32,24 38,24 33,28 35,34 30,30 25,34 27,28 22,24 28,24" fill="none" stroke="#a87f1c" stroke-width="0.4"/>`,
+  },
+  {
+    id: 'avatar_34',
+    label: 'Racing Program',
+    category: 'lifestyle',
+    svg: `<rect width="60" height="60" rx="8" fill="#1a1a1a"/>
+<rect x="14" y="8" width="32" height="46" rx="1" fill="#fef3c7" stroke="#7c4a2c" stroke-width="0.6"/>
+<rect x="14" y="8" width="32" height="14" fill="#8B1A2F"/>
+<text x="30" y="14" font-size="4" font-family="serif" font-weight="bold" fill="#C9A84C" text-anchor="middle">DERBY</text>
+<text x="30" y="20" font-size="6" font-family="serif" font-weight="bold" fill="#C9A84C" text-anchor="middle">RACING</text>
+<g stroke="#5a3520" stroke-width="0.4" fill="none">
+  <line x1="18" y1="26" x2="42" y2="26"/>
+  <line x1="18" y1="30" x2="42" y2="30"/>
+  <line x1="18" y1="34" x2="42" y2="34"/>
+  <line x1="18" y1="38" x2="42" y2="38"/>
+  <line x1="18" y1="42" x2="42" y2="42"/>
+  <line x1="18" y1="46" x2="36" y2="46"/>
+  <line x1="18" y1="50" x2="42" y2="50"/>
+</g>
+<g font-size="3" font-family="monospace" fill="#1a1a1a">
+  <text x="20" y="29">1</text>
+  <text x="20" y="33">2</text>
+  <text x="20" y="37">3</text>
+  <text x="20" y="41">4</text>
+  <text x="20" y="45">5</text>
+  <text x="20" y="49">6</text>
+</g>
+<text x="40" y="51" font-size="6" font-family="serif" font-weight="bold" fill="#8B1A2F" text-anchor="end">$2</text>`,
+  },
+
+  // ─── FUN & LUCKY (35–40) ─────────────────────────────────────────────────
+  {
+    id: 'avatar_35',
+    label: 'Lucky Horseshoe',
+    category: 'fun',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<path d="M12 18 Q12 50 30 52 Q48 50 48 18 L40 18 Q40 44 30 44 Q20 44 20 18 Z" fill="#C9A84C" stroke="#a87f1c" stroke-width="1.4"/>
+<g fill="#1a1a1a">
+  <circle cx="14" cy="22" r="1.2"/>
+  <circle cx="20" cy="22" r="1.2"/>
+  <circle cx="40" cy="22" r="1.2"/>
+  <circle cx="46" cy="22" r="1.2"/>
+  <circle cx="14" cy="32" r="1.2"/>
+  <circle cx="20" cy="32" r="1.2"/>
+  <circle cx="40" cy="32" r="1.2"/>
+  <circle cx="46" cy="32" r="1.2"/>
+  <circle cx="16" cy="42" r="1.2"/>
+  <circle cx="44" cy="42" r="1.2"/>
+</g>
+<g fill="#fef3c7" opacity="0.5">
+  <ellipse cx="20" cy="20" rx="2" ry="4"/>
+</g>
+<g fill="#fff">
+  <circle cx="30" cy="14" r="1.5"/>
+  <circle cx="14" cy="14" r="0.8"/>
+  <circle cx="46" cy="14" r="0.8"/>
+</g>`,
+  },
+  {
+    id: 'avatar_36',
+    label: 'Lucky Sevens',
+    category: 'fun',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<g fill="#fff" stroke="#1a1a1a" stroke-width="0.8">
+  <rect x="6" y="18" width="22" height="22" rx="3" transform="rotate(-12 17 29)"/>
+  <rect x="32" y="22" width="22" height="22" rx="3" transform="rotate(12 43 33)"/>
+</g>
+<g fill="#dc2626" transform="rotate(-12 17 29)">
+  <circle cx="11" cy="23" r="1.6"/>
+  <circle cx="17" cy="29" r="1.6"/>
+  <circle cx="23" cy="35" r="1.6"/>
+</g>
+<g fill="#dc2626" transform="rotate(12 43 33)">
+  <circle cx="37" cy="27" r="1.6"/>
+  <circle cx="49" cy="27" r="1.6"/>
+  <circle cx="37" cy="39" r="1.6"/>
+  <circle cx="49" cy="39" r="1.6"/>
+</g>
+<text x="30" y="58" font-size="9" font-family="serif" font-weight="bold" fill="#C9A84C" text-anchor="middle">LUCKY 7</text>`,
+  },
+  {
+    id: 'avatar_37',
+    label: 'Poker Chip Stack',
+    category: 'fun',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<g stroke="#1a1a1a" stroke-width="0.6">
+  <ellipse cx="30" cy="46" rx="20" ry="6" fill="#1a1a1a"/>
+  <ellipse cx="30" cy="44" rx="20" ry="5" fill="#1a1a1a"/>
+  <ellipse cx="30" cy="40" rx="20" ry="6" fill="#dc2626"/>
+  <ellipse cx="30" cy="38" rx="20" ry="5" fill="#dc2626"/>
+  <ellipse cx="30" cy="34" rx="20" ry="6" fill="#fff"/>
+  <ellipse cx="30" cy="32" rx="20" ry="5" fill="#fff"/>
+  <ellipse cx="30" cy="28" rx="20" ry="6" fill="#1e3a8a"/>
+  <ellipse cx="30" cy="26" rx="20" ry="5" fill="#1e3a8a"/>
+  <ellipse cx="30" cy="22" rx="20" ry="6" fill="#C9A84C"/>
+  <ellipse cx="30" cy="20" rx="20" ry="5" fill="#C9A84C"/>
+</g>
+<g fill="none" stroke="#fff" stroke-width="0.8" stroke-dasharray="2 1.5">
+  <ellipse cx="30" cy="20" rx="14" ry="3.5"/>
+  <ellipse cx="30" cy="26" rx="14" ry="3.5" stroke="#fff"/>
+  <ellipse cx="30" cy="32" rx="14" ry="3.5" stroke="#1a1a1a"/>
+  <ellipse cx="30" cy="38" rx="14" ry="3.5" stroke="#fff"/>
+  <ellipse cx="30" cy="44" rx="14" ry="3.5" stroke="#fff"/>
+</g>
+<text x="30" y="22" font-size="5" font-family="serif" font-weight="bold" fill="#1a1a1a" text-anchor="middle">$</text>`,
+  },
+  {
+    id: 'avatar_38',
+    label: 'Ace of Spades',
+    category: 'fun',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<rect x="12" y="6" width="36" height="48" rx="3" fill="#fef3c7" stroke="#1a1a1a" stroke-width="0.8"/>
+<text x="16" y="16" font-size="6" font-family="serif" font-weight="bold" fill="#1a1a1a">A</text>
+<path d="M18 18 Q16 22 18 24 Q20 22 18 18 Z" fill="#1a1a1a"/>
+<text x="44" y="50" font-size="6" font-family="serif" font-weight="bold" fill="#1a1a1a" text-anchor="end" transform="rotate(180 44 50)">A</text>
+<g transform="rotate(180 44 44)">
+  <path d="M44 42 Q42 46 44 48 Q46 46 44 42 Z" fill="#1a1a1a"/>
+</g>
+<g transform="translate(30 30) scale(2.4)">
+  <path d="M0 -6 Q-5 -2 -5 2 Q-5 5 -2 5 Q-1 5 0 4 Q1 5 2 5 Q5 5 5 2 Q5 -2 0 -6 Z" fill="#1a1a1a"/>
+  <path d="M-1 4 L-2 7 L2 7 L1 4 Z" fill="#1a1a1a"/>
+</g>`,
+  },
+  {
+    id: 'avatar_39',
+    label: 'Cowboy Boot',
+    category: 'fun',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<rect x="0" y="50" width="60" height="10" fill="#5a3520"/>
+<path d="M16 8 L34 8 L36 36 L52 36 L52 50 L16 50 Z" fill="#7c4a2c" stroke="#3a2010" stroke-width="0.8"/>
+<rect x="16" y="50" width="40" height="4" fill="#3a2010"/>
+<line x1="16" y1="14" x2="34" y2="14" stroke="#C9A84C" stroke-width="1"/>
+<line x1="16" y1="20" x2="34" y2="20" stroke="#C9A84C" stroke-width="0.6"/>
+<g stroke="#C9A84C" stroke-width="0.5" fill="none">
+  <path d="M18 22 Q22 28 26 22"/>
+  <path d="M28 22 Q32 28 34 22"/>
+  <path d="M20 30 Q24 36 28 30"/>
+  <path d="M30 30 Q34 36 32 32"/>
+</g>
+<g fill="#C9A84C" stroke="#a87f1c" stroke-width="0.4">
+  <circle cx="44" cy="46" r="3"/>
+</g>
+<g stroke="#a87f1c" stroke-width="0.4">
+  <line x1="41" y1="46" x2="47" y2="46"/>
+  <line x1="44" y1="43" x2="44" y2="49"/>
+  <line x1="42" y1="44" x2="46" y2="48"/>
+  <line x1="46" y1="44" x2="42" y2="48"/>
+</g>
+<g fill="#3a2010">
+  <circle cx="20" cy="46" r="0.8"/>
+  <circle cx="26" cy="46" r="0.8"/>
+  <circle cx="32" cy="46" r="0.8"/>
+</g>`,
+  },
+  {
+    id: 'avatar_40',
+    label: 'Four Leaf Clover',
+    category: 'fun',
+    svg: `<rect width="60" height="60" rx="8" fill="#1B4332"/>
+<g fill="#16a34a" stroke="#14532d" stroke-width="0.6">
+  <path d="M30 30 Q22 14 16 16 Q14 24 26 28 Z"/>
+  <path d="M30 30 Q22 46 16 44 Q14 36 26 32 Z"/>
+  <path d="M30 30 Q38 14 44 16 Q46 24 34 28 Z"/>
+  <path d="M30 30 Q38 46 44 44 Q46 36 34 32 Z"/>
+</g>
+<g fill="#22c55e" opacity="0.5">
+  <path d="M22 22 Q18 18 20 20 Z"/>
+  <path d="M22 38 Q18 42 20 40 Z"/>
+  <path d="M38 22 Q42 18 40 20 Z"/>
+  <path d="M38 38 Q42 42 40 40 Z"/>
+</g>
+<circle cx="30" cy="30" r="2.5" fill="#15803d"/>
+<line x1="30" y1="32" x2="30" y2="56" stroke="#15803d" stroke-width="2"/>
+<g fill="#fef3c7" opacity="0.7">
+  <circle cx="22" cy="20" r="0.8"/>
+  <circle cx="38" cy="20" r="0.8"/>
+  <circle cx="22" cy="40" r="0.8"/>
+  <circle cx="38" cy="40" r="0.8"/>
+</g>`,
+  },
+]
+
+const FALLBACK_AVATAR: Avatar = AVATARS[0]
+
+export function getAvatar(id: string | null | undefined): Avatar {
+  if (!id) return FALLBACK_AVATAR
+  return AVATARS.find(a => a.id === id) ?? FALLBACK_AVATAR
+}
+
+type AvatarIconProps = {
+  /** Avatar id (e.g. "avatar_07"). Unknown ids fall back to the first avatar. */
+  id?: string | null
+  className?: string
+  /** Override the rendered title/aria-label if you don't want the default avatar name. */
+  title?: string
+} & Omit<React.SVGProps<SVGSVGElement>, 'id' | 'className' | 'children' | 'dangerouslySetInnerHTML'>
+
+/**
+ * Renders an avatar as a self-contained SVG.
+ * Inject into a regular DOM tree with `<AvatarIcon id={...} className="w-10 h-10"/>`.
+ * For embedding inside a parent SVG (e.g. the track), use the markup directly:
+ *   <svg viewBox="0 0 60 60" dangerouslySetInnerHTML={{__html: getAvatar(id).svg}}/>
+ */
+export function AvatarIcon({ id, className, title, ...rest }: AvatarIconProps) {
+  const av = getAvatar(id)
+  return (
+    <svg
+      {...rest}
+      viewBox="0 0 60 60"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      role="img"
+      aria-label={title ?? av.label}
+      dangerouslySetInnerHTML={{ __html: av.svg }}
+    />
+  )
+}
