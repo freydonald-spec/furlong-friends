@@ -24,7 +24,7 @@ export default function SplashPage() {
             <span className="text-[var(--gold)] text-lg">🌹</span>
             <div className="h-px w-12 bg-[var(--gold)]" />
           </div>
-          <p className="text-[var(--gold)] font-serif italic text-lg sm:text-xl max-w-xs">
+          <p className="text-[var(--gold)] font-serif italic text-base sm:text-xl whitespace-nowrap">
             The Ultimate Derby Day Pick &lsquo;Em Game
           </p>
         </div>
@@ -39,8 +39,14 @@ export default function SplashPage() {
             Join Game
           </Link>
           <Link
+            href="/login"
+            className="text-center text-white/55 hover:text-white text-sm underline underline-offset-4"
+          >
+            Already joined? Log back in
+          </Link>
+          <Link
             href="/track"
-            className="flex items-center justify-center h-14 rounded-full bg-transparent text-[var(--gold)] font-bold text-xl border-2 border-[var(--gold)] hover:bg-[var(--gold)]/10 active:scale-[0.98] transition-all"
+            className="flex items-center justify-center h-14 rounded-full bg-transparent text-[var(--gold)] font-bold text-xl border-2 border-[var(--gold)] hover:bg-[var(--gold)]/10 active:scale-[0.98] transition-all mt-1"
           >
             <span className="mr-2">🏁</span>
             Live Track

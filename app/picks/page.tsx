@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
-import { AvatarIcon } from '@/lib/avatars'
+import { AvatarIcon, AVATARS } from '@/lib/avatars'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 type PickDraft = {
@@ -32,6 +32,7 @@ export default function PicksPage() {
   const [tokenAssignType, setTokenAssignType] = useState<'2x' | '3x' | null>(null)
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set())
   const [adminAlert, setAdminAlert] = useState<string | null>(null)
+  const [changeAvatarOpen, setChangeAvatarOpen] = useState(false)
 
   async function loadAll() {
     if (typeof window === 'undefined') return
@@ -340,11 +341,33 @@ export default function PicksPage() {
       <section className="px-5 pt-6 pb-4">
         <div className="max-w-2xl mx-auto bg-gradient-to-br from-[var(--rose-dark)] to-[#5a0f1d] rounded-2xl p-5 border-2 border-[var(--gold)]/40 shadow-lg relative overflow-hidden">
           <div className="absolute -top-8 -right-8 text-9xl opacity-10">🌹</div>
-          <div className="flex items-center gap-4 relative">
-            <AvatarIcon id={player.avatar} className="w-20 h-20 shrink-0 rounded-xl shadow-md" />
+          <div className="flex items-start gap-4 relative">
+            <button
+              type="button"
+              onClick={() => setChangeAvatarOpen(true)}
+              title="Change avatar"
+              className="relative shrink-0 group"
+            >
+              <AvatarIcon id={player.avatar} className="w-20 h-20 rounded-xl shadow-md" />
+              <span className="absolute -bottom-1 -right-1 bg-[var(--gold)] text-black text-[10px] font-bold rounded-full w-6 h-6 flex items-center justify-center border-2 border-[var(--rose-dark)] group-hover:scale-110 transition-transform">
+                ✎
+              </span>
+            </button>
             <div className="flex-1 min-w-0">
               <h2 className="font-serif text-2xl font-bold text-white truncate">{player.name}</h2>
-              <p className="text-[var(--gold)]/80 text-sm font-serif italic">{event.name}</p>
+              <button
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    localStorage.removeItem('furlong_player_id')
+                    localStorage.removeItem('furlong_player_name')
+                  }
+                  router.push('/')
+                }}
+                className="text-white/55 hover:text-white text-xs underline underline-offset-2 mt-0.5"
+              >
+                Not you?
+              </button>
+              <p className="text-[var(--gold)]/80 text-sm font-serif italic mt-1">{event.name}</p>
               <div className="flex gap-4 mt-2">
                 <div>
                   <div className="text-[var(--gold)] text-2xl font-bold leading-none">{myTotalScore}</div>
@@ -359,6 +382,12 @@ export default function PicksPage() {
               </div>
             </div>
           </div>
+          <button
+            onClick={() => setChangeAvatarOpen(true)}
+            className="mt-3 text-xs font-semibold text-[var(--gold)] hover:text-white border border-[var(--gold)]/40 rounded-full px-3 h-8 inline-flex items-center"
+          >
+            🎨 Change Avatar
+          </button>
         </div>
       </section>
 
@@ -366,9 +395,12 @@ export default function PicksPage() {
       {event.multiplier_visible && (
         <section className="px-5 pb-4">
           <div className="max-w-2xl mx-auto">
-            <h3 className="text-white/80 text-sm uppercase tracking-wider font-semibold mb-2">
-              Your Multiplier Tokens
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[var(--gold)] text-sm uppercase tracking-wider font-bold flex items-center gap-2">
+                <span aria-hidden>✨</span> Your Bonus Tokens
+              </h3>
+              <span className="text-white/45 text-[10px] uppercase tracking-wide">multiply your points</span>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <TokenCard
                 type="3x"
@@ -383,8 +415,8 @@ export default function PicksPage() {
                 onAssign={() => setTokenAssignType('2x')}
               />
             </div>
-            <p className="text-white/40 text-xs mt-2 text-center">
-              Unassigned: 3x auto-applies to Race 14 • 2x auto-applies to Race 13
+            <p className="text-white/45 text-[11px] mt-3 text-center italic">
+              Unassigned tokens auto-apply at race time · 3× → Race 14 · 2× → Race 13
             </p>
           </div>
         </section>
@@ -437,6 +469,29 @@ export default function PicksPage() {
         )}
       </AnimatePresence>
 
+      {/* Change Avatar Modal */}
+      <AnimatePresence>
+        {changeAvatarOpen && (
+          <ChangeAvatarModal
+            player={player}
+            takenAvatars={allPlayers.filter(p => p.id !== player.id).map(p => p.avatar)}
+            onClose={() => setChangeAvatarOpen(false)}
+            onPick={async (avatarId) => {
+              const { error: err } = await supabase
+                .from('players')
+                .update({ avatar: avatarId })
+                .eq('id', player.id)
+              if (err) {
+                alert("Couldn't change avatar: " + err.message)
+                return
+              }
+              setPlayer({ ...player, avatar: avatarId })
+              setChangeAvatarOpen(false)
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Token Assign Modal */}
       <AnimatePresence>
         {tokenAssignType && (
@@ -480,33 +535,91 @@ function TokenCard({
   onAssign: () => void
 }) {
   const race = races.find(r => r.id === assignedRaceId)
-  const locked = race && (race.status === 'locked' || race.status === 'finished')
+  const locked = !!race && (race.status === 'locked' || race.status === 'finished')
+  const isAssigned = !!race
+  const isGold = type === '3x'
 
   return (
-    <button
+    <motion.button
       onClick={onAssign}
-      disabled={!!locked}
+      disabled={locked}
+      whileHover={locked ? undefined : { scale: 1.025, y: -2 }}
+      whileTap={locked ? undefined : { scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 360, damping: 22 }}
       className={`
-        relative rounded-xl p-3 text-left border-2 transition-all min-h-[72px]
-        ${type === '3x' ? 'bg-[var(--gold)]/10 border-[var(--gold)]/60' : 'bg-white/5 border-white/30'}
-        ${locked ? 'opacity-70 cursor-not-allowed' : 'hover:scale-[1.02]'}
+        relative rounded-2xl border-2 overflow-hidden text-left
+        min-h-[120px] p-3 pl-2
+        ${isGold
+          ? 'bg-gradient-to-br from-[#e2c569] via-[#C9A84C] to-[#8e6c1c] border-[#fef3c7]/70 shadow-lg shadow-[var(--gold)]/30'
+          : 'bg-gradient-to-br from-white/20 via-white/10 to-white/5 border-white/50 shadow-md shadow-white/10'}
+        ${locked ? 'opacity-75 cursor-not-allowed' : ''}
       `}
     >
-      <div className="flex items-center gap-2">
-        <span className={`font-serif text-2xl font-extrabold ${type === '3x' ? 'text-[var(--gold)]' : 'text-white'}`}>
-          {type}
-        </span>
-        <span className="text-xs text-white/60">multiplier</span>
-      </div>
-      {race ? (
-        <div className="text-white text-sm mt-1 truncate">
-          → Race {race.race_number}: {race.name}
-        </div>
-      ) : (
-        <div className="text-white/50 text-sm mt-1">Tap to assign</div>
+      {/* Shimmer sweep — only when unassigned & unlocked, to invite a tap */}
+      {!isAssigned && !locked && (
+        <motion.div
+          aria-hidden
+          initial={{ x: '-120%' }}
+          animate={{ x: '220%' }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: 'linear', delay: isGold ? 0 : 1.2 }}
+          className="absolute inset-y-0 w-1/2 pointer-events-none"
+          style={{
+            background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%)',
+          }}
+        />
       )}
-      {locked && <div className="text-[10px] text-amber-400 mt-0.5">🔒 Locked in</div>}
-    </button>
+
+      <div className="relative flex items-center gap-3">
+        {/* Big circular badge */}
+        <motion.div
+          animate={isAssigned || locked ? undefined : { scale: [1, 1.08, 1] }}
+          transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+          className={`
+            shrink-0 w-16 h-16 rounded-full flex items-center justify-center
+            font-serif font-extrabold text-2xl leading-none
+            ${isGold
+              ? 'bg-[#1a0a05] text-[var(--gold)] ring-[3px] ring-[var(--gold)] shadow-inner'
+              : 'bg-[var(--dark)] text-white ring-[3px] ring-white shadow-inner'}
+          `}
+        >
+          {type.toUpperCase()}
+        </motion.div>
+
+        <div className="flex-1 min-w-0 self-stretch flex flex-col justify-center">
+          <div className={`text-[10px] font-extrabold uppercase tracking-wider ${isGold ? 'text-black/65' : 'text-white/65'}`}>
+            Bonus Token
+          </div>
+          {isAssigned ? (
+            <>
+              <div className={`text-base font-bold leading-tight ${isGold ? 'text-black' : 'text-white'}`}>
+                Race {race!.race_number}
+              </div>
+              <div className={`text-xs truncate ${isGold ? 'text-black/75' : 'text-white/75'}`}>
+                {race!.name || `Race ${race!.race_number}`}
+              </div>
+              {locked ? (
+                <div className={`text-[10px] mt-0.5 font-bold ${isGold ? 'text-red-900/85' : 'text-amber-300'}`}>
+                  🔒 Locked in
+                </div>
+              ) : (
+                <div className={`text-[10px] mt-0.5 font-semibold ${isGold ? 'text-black/60' : 'text-white/55'}`}>
+                  Tap to reassign →
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className={`text-base font-extrabold leading-tight ${isGold ? 'text-black' : 'text-white'}`}>
+                Tap to assign!
+              </div>
+              <div className={`text-[11px] mt-0.5 ${isGold ? 'text-black/70' : 'text-white/70'}`}>
+                Pick any race to {type === '3x' ? 'triple' : 'double'} your points
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </motion.button>
   )
 }
 
@@ -552,8 +665,37 @@ function RaceCard({
 
   const canPick = race.status === 'open' || race.status === 'upcoming'
 
+  const tokenBoost = multiplierVisible ? multiplier : null
+  const cardClasses =
+    tokenBoost === '3x'
+      ? 'border-[var(--gold)] bg-gradient-to-br from-[var(--gold)]/15 via-[var(--rose-dark)]/25 to-black/40 shadow-lg shadow-[var(--gold)]/20'
+      : tokenBoost === '2x'
+        ? 'border-white/70 bg-gradient-to-br from-white/15 via-white/5 to-black/40 shadow-md shadow-white/10'
+        : race.is_featured
+          ? 'border-[var(--gold)]/60 bg-gradient-to-br from-[var(--rose-dark)]/30 to-black/40'
+          : 'border-white/15 bg-white/5'
+
   return (
-    <div className={`rounded-xl border-2 ${race.is_featured ? 'border-[var(--gold)]/60 bg-gradient-to-br from-[var(--rose-dark)]/30 to-black/40' : 'border-white/15 bg-white/5'} p-4`}>
+    <div className={`relative rounded-xl border-2 p-4 ${cardClasses}`}>
+      {/* Token ribbon — sits at the top-right corner when this race is boosted */}
+      {tokenBoost && (
+        <div className="absolute -top-3 right-3 z-10">
+          <div
+            className={`
+              inline-flex items-center gap-1 px-3 py-1 rounded-full
+              font-serif font-extrabold text-[11px] uppercase tracking-wider
+              shadow-lg
+              ${tokenBoost === '3x'
+                ? 'bg-gradient-to-br from-[#fef3c7] via-[var(--gold)] to-[#a87f1c] text-[var(--rose-dark)] border-2 border-[var(--gold)]'
+                : 'bg-gradient-to-br from-white via-white to-gray-200 text-[var(--dark)] border-2 border-white/80'}
+            `}
+          >
+            <span aria-hidden>✨</span>
+            {tokenBoost} BONUS
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
@@ -562,11 +704,6 @@ function RaceCard({
             {race.is_featured && (
               <span className="text-[10px] font-bold text-[var(--gold)] bg-[var(--gold)]/15 border border-[var(--gold)]/40 px-1.5 py-0.5 rounded">
                 ⭐ FEATURED {race.featured_multiplier > 1 ? `${race.featured_multiplier}x` : ''}
-              </span>
-            )}
-            {multiplier && multiplierVisible && (
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${multiplier === '3x' ? 'text-[var(--gold)] border-[var(--gold)]/60 bg-[var(--gold)]/10' : 'text-white border-white/40 bg-white/10'}`}>
-                {multiplier} TOKEN
               </span>
             )}
           </div>
@@ -898,6 +1035,75 @@ function TokenAssignModal({
               Remove assignment
             </button>
           )}
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+// ----- CHANGE AVATAR MODAL -----
+function ChangeAvatarModal({
+  player, takenAvatars, onPick, onClose,
+}: {
+  player: Player
+  takenAvatars: string[]
+  onPick: (avatarId: string) => Promise<void>
+  onClose: () => void
+}) {
+  const [pending, setPending] = useState<string | null>(null)
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center"
+    >
+      <motion.div
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 26, stiffness: 200 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[var(--dark)] border-t-2 sm:border-2 border-[var(--gold)]/40 sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md max-h-[88vh] overflow-hidden flex flex-col"
+      >
+        <div className="px-5 pt-4 pb-3 border-b border-white/10 flex items-center justify-between">
+          <h3 className="font-serif text-xl font-bold text-white">Change Avatar</h3>
+          <button onClick={onClose} className="text-white/60 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="overflow-y-auto p-3">
+          <p className="text-white/55 text-xs text-center mb-3">
+            Tap a new avatar to switch. Grayed-out avatars are taken by other players.
+          </p>
+          <div className="grid grid-cols-5 gap-2">
+            {AVATARS.map(av => {
+              const taken = takenAvatars.includes(av.id) // doesn't include current player
+              const isCurrent = av.id === player.avatar
+              const isPending = pending === av.id
+              return (
+                <button
+                  key={av.id}
+                  disabled={taken || isPending}
+                  onClick={async () => {
+                    if (taken || isCurrent) return
+                    setPending(av.id)
+                    try { await onPick(av.id) } finally { setPending(null) }
+                  }}
+                  title={taken ? 'Taken' : av.label}
+                  className={`
+                    relative aspect-square flex items-center justify-center rounded-xl border-2 transition-all min-h-[48px]
+                    ${isCurrent
+                      ? 'border-[var(--gold)] bg-[var(--gold)]/20'
+                      : taken
+                        ? 'border-white/10 bg-white/5 opacity-40'
+                        : 'border-white/15 bg-white/5 hover:border-[var(--gold)]/60 hover:bg-white/10'}
+                    ${isPending ? 'opacity-50' : ''}
+                  `}
+                >
+                  <AvatarIcon id={av.id} className="w-full h-full p-0.5" />
+                  {isCurrent && (
+                    <span className="absolute top-0.5 right-0.5 bg-[var(--gold)] text-black text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">✓</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </motion.div>
     </motion.div>

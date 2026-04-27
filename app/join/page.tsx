@@ -6,26 +6,73 @@ import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "@/lib/supabase"
 import { AVATARS, AvatarIcon } from "@/lib/avatars"
-import type { Event } from "@/lib/types"
+import type { Event, Player } from "@/lib/types"
 
 type TakenInfo = { avatar: string; name: string; id: string }
 
+type WelcomeInfo = {
+  id: string
+  name: string
+  avatar: string
+  score: number
+  rank: number
+  totalPlayers: number
+}
+
+type Step = 'name' | 'welcome' | 'avatar'
+
+function normalizeName(s: string): string {
+  return s.trim().toLowerCase()
+}
+
+async function findPlayerByName(eventId: string, rawName: string): Promise<Player | null> {
+  const target = normalizeName(rawName)
+  if (!target) return null
+  const { data: players } = await supabase
+    .from('players')
+    .select('*')
+    .eq('event_id', eventId)
+  return (players ?? []).find(p => normalizeName(p.name) === target) ?? null
+}
+
+async function loadWelcomeInfo(player: Player, eventId: string): Promise<WelcomeInfo> {
+  const [{ data: allPlayers }, { data: scoreRows }] = await Promise.all([
+    supabase.from('players').select('id').eq('event_id', eventId),
+    supabase.from('scores').select('player_id, final_points').eq('event_id', eventId),
+  ])
+  const totals = new Map<string, number>()
+  for (const p of allPlayers ?? []) totals.set(p.id, 0)
+  for (const s of scoreRows ?? []) {
+    totals.set(s.player_id, (totals.get(s.player_id) ?? 0) + (s.final_points ?? 0))
+  }
+  const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1])
+  const idx = sorted.findIndex(([id]) => id === player.id)
+  return {
+    id: player.id,
+    name: player.name,
+    avatar: player.avatar,
+    score: totals.get(player.id) ?? 0,
+    rank: idx === -1 ? sorted.length : idx + 1,
+    totalPlayers: sorted.length,
+  }
+}
+
 export default function JoinPage() {
   const router = useRouter()
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<Step>('name')
   const [name, setName] = useState("")
   const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null)
   const [taken, setTaken] = useState<TakenInfo[]>([])
   const [event, setEvent] = useState<Event | null>(null)
   const [loading, setLoading] = useState(true)
+  const [continuing, setContinuing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejoinCandidate, setRejoinCandidate] = useState<TakenInfo | null>(null)
+  const [welcomeMatch, setWelcomeMatch] = useState<WelcomeInfo | null>(null)
 
   async function init() {
     try {
-      // We'll check the returning-player redirect after we know the active event.
-
       const { data: events, error: evtErr } = await supabase
         .from('events')
         .select('*')
@@ -93,12 +140,33 @@ export default function JoinPage() {
     setSelectedAvatar(avatarId)
   }
 
-  async function rejoin(player: TakenInfo) {
+  function restoreSession(player: { id: string; name: string }) {
     if (typeof window !== 'undefined') {
       localStorage.setItem('furlong_player_id', player.id)
       localStorage.setItem('furlong_player_name', player.name)
     }
     router.replace('/picks')
+  }
+
+  async function handleContinue() {
+    if (!name.trim() || !event || continuing) return
+    setContinuing(true)
+    setError(null)
+    try {
+      const existing = await findPlayerByName(event.id, name)
+      if (existing) {
+        const info = await loadWelcomeInfo(existing, event.id)
+        setWelcomeMatch(info)
+        setStep('welcome')
+      } else {
+        setStep('avatar')
+      }
+    } catch (e) {
+      console.error(e)
+      setError("Couldn't check that name. Try again.")
+    } finally {
+      setContinuing(false)
+    }
   }
 
   async function handleJoin() {
@@ -107,7 +175,17 @@ export default function JoinPage() {
     setError(null)
 
     try {
-      // Race-condition check
+      // Final duplicate-name guard (race-condition safety).
+      const dupByName = await findPlayerByName(event.id, name)
+      if (dupByName) {
+        const info = await loadWelcomeInfo(dupByName, event.id)
+        setWelcomeMatch(info)
+        setStep('welcome')
+        setSubmitting(false)
+        return
+      }
+
+      // Avatar conflict check
       const { data: conflict } = await supabase
         .from('players')
         .select('id, name')
@@ -139,11 +217,7 @@ export default function JoinPage() {
       if (insertErr) throw insertErr
       if (!player) throw new Error('No player returned')
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('furlong_player_id', player.id)
-        localStorage.setItem('furlong_player_name', player.name)
-      }
-      router.replace('/picks')
+      restoreSession(player)
     } catch (e) {
       console.error(e)
       setError("Something went wrong joining. Please try again.")
@@ -176,7 +250,7 @@ export default function JoinPage() {
           </div>
         )}
 
-        {step === 1 && (
+        {step === 'name' && (
           <div className="flex-1 flex flex-col justify-center">
             <div className="text-center mb-8">
               <div className="text-5xl mb-3">🎩</div>
@@ -198,20 +272,79 @@ export default function JoinPage() {
                 maxLength={28}
                 autoFocus
                 className="w-full h-14 px-5 rounded-xl bg-white/10 border-2 border-[var(--gold)]/30 text-white text-lg placeholder:text-white/40 focus:outline-none focus:border-[var(--gold)] transition-colors"
-                onKeyDown={e => e.key === 'Enter' && name.trim() && setStep(2)}
+                onKeyDown={e => { if (e.key === 'Enter' && name.trim()) void handleContinue() }}
               />
               <button
-                onClick={() => name.trim() && setStep(2)}
-                disabled={!name.trim()}
+                onClick={() => void handleContinue()}
+                disabled={!name.trim() || continuing}
                 className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
               >
-                Continue →
+                {continuing ? 'Checking…' : 'Continue →'}
+              </button>
+              <div className="text-center pt-2">
+                <Link href="/login" className="text-white/55 hover:text-white text-sm underline underline-offset-4">
+                  Already joined? Log back in
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 'welcome' && welcomeMatch && (
+          <div className="flex-1 flex flex-col justify-center">
+            <div className="text-center mb-8">
+              <AvatarIcon
+                id={welcomeMatch.avatar}
+                className="w-32 h-32 mx-auto rounded-2xl shadow-lg mb-4"
+              />
+              <h1 className="font-serif text-3xl font-bold text-white mb-1">Welcome back,</h1>
+              <h2 className="font-serif text-3xl font-bold text-[var(--gold)] mb-4 truncate">
+                {welcomeMatch.name}!
+              </h2>
+              <div className="inline-flex items-center gap-6 bg-white/5 border border-[var(--gold)]/30 rounded-xl px-5 py-3">
+                <div>
+                  <div className="text-[var(--gold)] text-2xl font-bold leading-none">
+                    {welcomeMatch.score}
+                  </div>
+                  <div className="text-white/60 text-xs uppercase tracking-wide">Points</div>
+                </div>
+                <div className="w-px h-8 bg-white/15" />
+                <div>
+                  <div className="text-[var(--gold)] text-2xl font-bold leading-none">
+                    #{welcomeMatch.rank}
+                    <span className="text-white/50 text-sm font-normal">
+                      {' '}/ {welcomeMatch.totalPlayers}
+                    </span>
+                  </div>
+                  <div className="text-white/60 text-xs uppercase tracking-wide">Rank</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() =>
+                  restoreSession({ id: welcomeMatch.id, name: welcomeMatch.name })
+                }
+                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+              >
+                🏇 That&apos;s me — Let&apos;s play!
+              </button>
+              <button
+                onClick={() => {
+                  setWelcomeMatch(null)
+                  setName('')
+                  setStep('name')
+                }}
+                className="w-full text-center text-white/60 hover:text-white text-sm underline underline-offset-4 py-2"
+              >
+                Not me — use a different name
               </button>
             </div>
           </div>
         )}
 
-        {step === 2 && (
+        {step === 'avatar' && (
           <div className="flex-1 flex flex-col">
             <div className="text-center mb-5">
               <h1 className="font-serif text-3xl font-bold text-white">Choose Your Avatar</h1>
@@ -260,7 +393,7 @@ export default function JoinPage() {
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => setStep('name')}
                   className="h-14 px-6 rounded-full border-2 border-white/20 text-white/70 font-medium hover:border-white/40 transition-colors"
                 >
                   ← Back
@@ -278,7 +411,7 @@ export default function JoinPage() {
         )}
       </div>
 
-      {/* Rejoin modal */}
+      {/* Rejoin modal (avatar-tap path) */}
       <AnimatePresence>
         {rejoinCandidate && (
           <motion.div
@@ -312,7 +445,11 @@ export default function JoinPage() {
                     Not me
                   </button>
                   <button
-                    onClick={() => rejoin(rejoinCandidate)}
+                    onClick={() => {
+                      const c = rejoinCandidate
+                      setRejoinCandidate(null)
+                      restoreSession({ id: c.id, name: c.name })
+                    }}
                     className="flex-1 h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold"
                   >
                     Yes, that&apos;s me

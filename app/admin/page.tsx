@@ -128,10 +128,37 @@ export default function AdminPage() {
         async () => { const { data } = await supabase.from('players').select('*').eq('event_id', event.id); if (data) setPlayers(data) })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'picks', filter: `event_id=eq.${event.id}` },
         async () => { const { data } = await supabase.from('picks').select('*').eq('event_id', event.id); if (data) setPicks(data) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'races', filter: `event_id=eq.${event.id}` },
+        async () => { const { data } = await supabase.from('races').select('*').eq('event_id', event.id).order('race_number'); if (data) setRaces(data) })
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, event?.id])
+
+  // Auto-lock: every 60s, lock any race whose post_time has passed.
+  useEffect(() => {
+    if (!authed || !event) return
+    let cancelled = false
+
+    async function lockOverdueRaces() {
+      const now = Date.now()
+      const overdue = races.filter(r =>
+        r.status !== 'locked' &&
+        r.status !== 'finished' &&
+        r.post_time &&
+        new Date(r.post_time).getTime() <= now
+      )
+      for (const r of overdue) {
+        if (cancelled) return
+        await supabase.from('races').update({ status: 'locked' }).eq('id', r.id)
+      }
+    }
+
+    void lockOverdueRaces()
+    const interval = setInterval(() => { void lockOverdueRaces() }, 60_000)
+    return () => { cancelled = true; clearInterval(interval) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, event?.id, races])
 
   function tryLogin() {
     if (pwInput === ADMIN_PASSWORD) {
@@ -547,9 +574,7 @@ function RacesTab({
           ↓ Download CSV template
         </button>
       </div>
-      <p className="text-white/50 text-xs -mt-2">
-        Each race accepts a CSV with columns: <code className="text-[var(--gold)]">number</code>, <code className="text-[var(--gold)]">name</code>, <code className="text-[var(--gold)]">odds</code>.
-      </p>
+      <BulkHorseImport races={races} onChange={onChange} />
       {races.map(race => (
         <RaceAdminCard
           key={race.id}
@@ -565,7 +590,11 @@ function RacesTab({
 }
 
 function downloadHorseTemplate() {
-  const csv = 'number,name,odds\n1,Example Horse,5-1\n2,Another Horse,8-1\n'
+  const csv =
+    'race_number,number,name,odds\n' +
+    '1,1,Banned for Life,8-5\n' +
+    '1,2,Optical,6-1\n' +
+    '2,1,Delightful Claire,6-5\n'
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -599,7 +628,7 @@ function parseCsvLine(line: string): string[] {
 }
 
 type CsvHorseParse = {
-  rows: Array<{ number: number; name: string; odds: string | null }>
+  rows: Array<{ race_number: number; number: number; name: string; odds: string | null }>
   errors: string[]
 }
 
@@ -613,24 +642,31 @@ function parseHorseCsv(text: string): CsvHorseParse {
 
   // Header detection
   const header = parseCsvLine(lines[0]).map(c => c.toLowerCase())
-  const hasHeader = header.includes('number') || header.includes('name')
+  const hasHeader = header.includes('race_number') || header.includes('number') || header.includes('name')
   const startIdx = hasHeader ? 1 : 0
 
-  let numberIdx = 0, nameIdx = 1, oddsIdx = 2
+  let raceNumIdx = 0, numberIdx = 1, nameIdx = 2, oddsIdx = 3
   if (hasHeader) {
     const idxOf = (n: string) => header.indexOf(n)
-    numberIdx = idxOf('number') !== -1 ? idxOf('number') : 0
-    nameIdx = idxOf('name') !== -1 ? idxOf('name') : 1
-    oddsIdx = idxOf('odds') !== -1 ? idxOf('odds') : 2
+    raceNumIdx = idxOf('race_number') !== -1 ? idxOf('race_number') : 0
+    numberIdx = idxOf('number') !== -1 ? idxOf('number') : 1
+    nameIdx = idxOf('name') !== -1 ? idxOf('name') : 2
+    oddsIdx = idxOf('odds') !== -1 ? idxOf('odds') : 3
   }
 
   for (let i = startIdx; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i])
     const lineNo = i + 1
+    const rawRace = cells[raceNumIdx]
     const rawNum = cells[numberIdx]
     const name = (cells[nameIdx] ?? '').trim()
     const odds = (cells[oddsIdx] ?? '').trim()
 
+    const raceNum = Number(rawRace)
+    if (!rawRace || !Number.isFinite(raceNum) || !Number.isInteger(raceNum) || raceNum < 1) {
+      errors.push(`Line ${lineNo}: invalid race_number "${rawRace ?? ''}"`)
+      continue
+    }
     const num = Number(rawNum)
     if (!rawNum || !Number.isFinite(num) || !Number.isInteger(num) || num < 1) {
       errors.push(`Line ${lineNo}: invalid number "${rawNum ?? ''}"`)
@@ -640,7 +676,7 @@ function parseHorseCsv(text: string): CsvHorseParse {
       errors.push(`Line ${lineNo}: missing name`)
       continue
     }
-    rows.push({ number: num, name, odds: odds || null })
+    rows.push({ race_number: raceNum, number: num, name, odds: odds || null })
   }
 
   return { rows, errors }
@@ -654,12 +690,6 @@ function RaceAdminCard({ race, horses, players, picks, onChange }: {
   const [horseNumber, setHorseNumber] = useState('')
   const [horseOdds, setHorseOdds] = useState('')
   const [busy, setBusy] = useState(false)
-
-  // CSV import state
-  const [csvOpen, setCsvOpen] = useState(false)
-  const [csvText, setCsvText] = useState('')
-  const [csvImporting, setCsvImporting] = useState(false)
-  const [csvResult, setCsvResult] = useState<{ inserted: number; errors: string[] } | null>(null)
 
   async function addHorse() {
     if (!horseName.trim() || !horseNumber.trim()) return
@@ -677,44 +707,13 @@ function RaceAdminCard({ race, horses, players, picks, onChange }: {
     onChange()
   }
 
-  function onPickFile(file: File) {
-    setCsvResult(null)
-    const reader = new FileReader()
-    reader.onload = () => setCsvText(String(reader.result ?? ''))
-    reader.onerror = () => setCsvResult({ inserted: 0, errors: ["Couldn't read file"] })
-    reader.readAsText(file)
-  }
-
-  async function importCsv() {
-    setCsvImporting(true)
-    setCsvResult(null)
-    const { rows, errors } = parseHorseCsv(csvText)
-    if (rows.length === 0) {
-      setCsvResult({ inserted: 0, errors: errors.length ? errors : ['No valid rows found.'] })
-      setCsvImporting(false)
-      return
-    }
-    const payload = rows.map(r => ({
-      race_id: race.id,
-      number: r.number,
-      name: r.name,
-      morning_line_odds: r.odds,
-      scratched: false,
-      finish_position: null,
-    }))
-    const { error: err } = await supabase.from('horses').insert(payload)
-    if (err) {
-      setCsvResult({ inserted: 0, errors: [...errors, `Database error: ${err.message}`] })
-    } else {
-      setCsvResult({ inserted: rows.length, errors })
-      setCsvText('')
-    }
-    setCsvImporting(false)
+  async function setStatus(status: Race['status']) {
+    await supabase.from('races').update({ status }).eq('id', race.id)
     onChange()
   }
 
-  async function setStatus(status: Race['status']) {
-    await supabase.from('races').update({ status }).eq('id', race.id)
+  async function lockNow() {
+    await supabase.from('races').update({ status: 'locked' }).eq('id', race.id)
     onChange()
   }
 
@@ -739,8 +738,14 @@ function RaceAdminCard({ race, horses, players, picks, onChange }: {
 
   return (
     <div className={`rounded-xl border-2 ${race.is_featured ? 'border-[var(--gold)]/50' : 'border-white/15'} bg-white/5 overflow-hidden`}>
-      <button onClick={() => setExpanded(e => !e)} className="w-full p-4 flex items-center justify-between text-left">
-        <div className="min-w-0">
+      <div
+        onClick={() => setExpanded(e => !e)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded(x => !x) }}
+        className="w-full p-4 flex items-center justify-between gap-3 text-left cursor-pointer"
+      >
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-white/60 text-xs font-mono">RACE {race.race_number}</span>
             {race.is_featured && <span className="text-[10px] text-[var(--gold)] font-bold">⭐ FEATURED ({race.featured_multiplier}x)</span>}
@@ -751,8 +756,18 @@ function RaceAdminCard({ race, horses, players, picks, onChange }: {
             🐴 {horses.length} horses • 📋 {playersWithPick}/{players.length} picked
           </div>
         </div>
-        <span className="text-white/50 text-xl shrink-0 ml-3">{expanded ? '−' : '+'}</span>
-      </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {race.status !== 'locked' && race.status !== 'finished' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); void lockNow() }}
+              className="px-3 h-9 rounded-full bg-amber-500 text-black text-xs font-bold border-2 border-amber-300 hover:bg-amber-400 shadow"
+            >
+              🔒 Lock Now
+            </button>
+          )}
+          <span className="text-white/50 text-xl">{expanded ? '−' : '+'}</span>
+        </div>
+      </div>
 
       {expanded && (
         <div className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4">
@@ -810,80 +825,7 @@ function RaceAdminCard({ race, horses, players, picks, onChange }: {
               <button onClick={addHorse} disabled={busy || !horseName || !horseNumber} className="px-4 h-10 rounded-lg bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-sm font-bold disabled:opacity-50">
                 Add
               </button>
-              <button
-                onClick={() => { setCsvOpen(o => !o); setCsvResult(null) }}
-                className="px-3 h-10 rounded-lg border border-[var(--gold)]/40 text-[var(--gold)] text-sm font-bold"
-              >
-                📥 {csvOpen ? 'Cancel' : 'Import CSV'}
-              </button>
             </div>
-
-            {csvOpen && (
-              <div className="mt-3 rounded-lg border border-[var(--gold)]/30 bg-black/30 p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <label className="inline-flex items-center gap-2 text-sm text-white/80 cursor-pointer">
-                    <span className="px-3 h-9 inline-flex items-center rounded-lg border border-white/30 hover:border-white/60">
-                      Choose .csv file
-                    </span>
-                    <input
-                      type="file"
-                      accept=".csv,text/csv"
-                      className="hidden"
-                      onChange={e => {
-                        const f = e.target.files?.[0]
-                        if (f) onPickFile(f)
-                        e.target.value = ''
-                      }}
-                    />
-                  </label>
-                  <button
-                    onClick={downloadHorseTemplate}
-                    type="button"
-                    className="text-xs text-[var(--gold)] underline underline-offset-4"
-                  >↓ Download template</button>
-                </div>
-                <textarea
-                  value={csvText}
-                  onChange={e => setCsvText(e.target.value)}
-                  rows={5}
-                  placeholder={`number,name,odds\n1,Mage,8-1\n2,Two Phil's,12-1`}
-                  className="w-full p-2 rounded-lg bg-white/10 border-2 border-white/15 text-white text-xs font-mono focus:outline-none focus:border-[var(--gold)]"
-                />
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={importCsv}
-                    disabled={csvImporting || !csvText.trim()}
-                    className="px-4 h-10 rounded-lg bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-sm font-bold disabled:opacity-50"
-                  >
-                    {csvImporting ? 'Importing…' : 'Import Horses'}
-                  </button>
-                  {csvText && (
-                    <button
-                      onClick={() => { setCsvText(''); setCsvResult(null) }}
-                      className="px-3 h-10 rounded-lg border border-white/20 text-white/70 text-sm"
-                    >Clear</button>
-                  )}
-                </div>
-                {csvResult && (
-                  <div className="text-xs space-y-1">
-                    {csvResult.inserted > 0 && (
-                      <div className="text-emerald-400 font-semibold">
-                        ✓ Imported {csvResult.inserted} horse{csvResult.inserted === 1 ? '' : 's'}
-                      </div>
-                    )}
-                    {csvResult.errors.length > 0 && (
-                      <div className="text-amber-300">
-                        <div className="font-semibold mb-0.5">Skipped {csvResult.errors.length} row{csvResult.errors.length === 1 ? '' : 's'}:</div>
-                        <ul className="list-disc list-inside ml-1 space-y-0.5">
-                          {csvResult.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
-                          {csvResult.errors.length > 8 && <li>…and {csvResult.errors.length - 8} more</li>}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Pick status */}
@@ -1174,7 +1116,7 @@ function PlayersTab({
   }
 
   async function removePlayer(p: Player) {
-    if (!confirm(`Remove ${p.name}? Their picks and scores will also be deleted.`)) return
+    if (!confirm(`Delete ${p.name}? This will remove all their picks and scores.`)) return
     await supabase.from('scores').delete().eq('player_id', p.id)
     await supabase.from('picks').delete().eq('player_id', p.id)
     await supabase.from('players').delete().eq('id', p.id)
@@ -1240,6 +1182,14 @@ function PlayersTab({
                 >
                   {p.paid ? '✓ Paid' : 'Mark Paid'}
                 </button>
+                <button
+                  onClick={() => removePlayer(p)}
+                  title={`Delete ${p.name}`}
+                  aria-label={`Delete ${p.name}`}
+                  className="w-9 h-9 rounded-full border border-red-500/30 text-red-300 hover:bg-red-500/15 hover:border-red-500/60 flex items-center justify-center text-base"
+                >
+                  🗑
+                </button>
                 <button onClick={() => setExpanded(isOpen ? null : p.id)} className="text-white/50 text-xl px-2">
                   {isOpen ? '−' : '+'}
                 </button>
@@ -1269,11 +1219,6 @@ function PlayersTab({
                         </div>
                       )
                     })}
-                  </div>
-                  <div className="flex justify-end pt-1">
-                    <button onClick={() => removePlayer(p)} className="text-red-400 text-xs hover:text-red-300">
-                      Remove player
-                    </button>
                   </div>
                 </div>
               )}
