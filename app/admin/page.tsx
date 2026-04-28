@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
 import { formatLocalIso, parseLocalIso } from '@/lib/time'
@@ -1373,14 +1374,49 @@ function ResultsTab({
   scores: Score[]
   onChange: () => void
 }) {
-  if (!event) return <p className="text-white/60">Set up the event first.</p>
+  // Hooks must run before the early returns below.
+  const racesWithResults = useMemo(
+    () => races.filter(r => r.status === 'locked' || r.status === 'finished' || r.status === 'open'),
+    [races]
+  )
 
-  const racesWithResults = races.filter(r => r.status === 'locked' || r.status === 'finished' || r.status === 'open')
+  const [expandedRaces, setExpandedRaces] = useState<Set<string>>(new Set())
+  const expandInitRef = useRef(false)
+
+  // Default expansion: only races without scores yet (unscored = needs admin
+  // attention) start expanded. Ref guard so realtime updates don't re-apply
+  // defaults after the admin has manually toggled cards.
+  useEffect(() => {
+    if (expandInitRef.current) return
+    if (racesWithResults.length === 0) return
+    expandInitRef.current = true
+    const defaults = new Set<string>()
+    for (const r of racesWithResults) {
+      const raceScores = scores.filter(s => s.race_id === r.id)
+      if (raceScores.length === 0) defaults.add(r.id)
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExpandedRaces(defaults)
+  }, [racesWithResults, scores])
+
+  if (!event) return <p className="text-white/60">Set up the event first.</p>
   if (racesWithResults.length === 0) return <p className="text-white/60">No races are locked yet.</p>
+
+  const allExpanded = racesWithResults.every(r => expandedRaces.has(r.id))
 
   return (
     <section className="space-y-4">
-      <h2 className="font-serif text-2xl font-bold text-white">Results</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-serif text-2xl font-bold text-white">Results</h2>
+        {racesWithResults.length > 1 && (
+          <button
+            onClick={() => setExpandedRaces(allExpanded ? new Set() : new Set(racesWithResults.map(r => r.id)))}
+            className="text-white/65 hover:text-white text-xs font-semibold underline-offset-2 hover:underline"
+          >
+            {allExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
+        )}
+      </div>
       <p className="text-white/60 text-sm">
         Mode: <span className="font-bold text-[var(--gold)]">{event.score_reveal_mode}</span> — change in Event tab.
       </p>
@@ -1397,6 +1433,18 @@ function ResultsTab({
             racesAll={races}
             picks={picks.filter(p => p.race_id === race.id)}
             scores={scores.filter(s => s.race_id === race.id)}
+            expanded={expandedRaces.has(race.id)}
+            onToggle={() => setExpandedRaces(prev => {
+              const next = new Set(prev)
+              if (next.has(race.id)) next.delete(race.id)
+              else next.add(race.id)
+              return next
+            })}
+            onCalculated={() => setExpandedRaces(prev => {
+              const next = new Set(prev)
+              next.delete(race.id)
+              return next
+            })}
             onChange={onChange}
           />
         )
@@ -1406,7 +1454,8 @@ function ResultsTab({
 }
 
 function ResultsCard({
-  race, event, horses, players, racesAll, picks, scores, onChange,
+  race, event, horses, players, racesAll, picks, scores,
+  expanded, onToggle, onCalculated, onChange,
 }: {
   race: Race
   event: Event
@@ -1415,6 +1464,9 @@ function ResultsCard({
   racesAll: Race[]
   picks: Pick[]
   scores: Score[]
+  expanded: boolean
+  onToggle: () => void
+  onCalculated: () => void
   onChange: () => void
 }) {
   const [winId, setWinId] = useState<string>(() => horses.find(h => h.finish_position === 1)?.id ?? '')
@@ -1512,97 +1564,181 @@ function ResultsCard({
     }
 
     setBusy(false)
+    // Auto-collapse the card now that scoring succeeded — admin's done with it.
+    onCalculated()
     onChange()
   }
 
   async function dramaticReveal() {
     setRevealing(true)
-    const channel = supabase.channel(`reveal-${event.id}`)
-    await channel.subscribe()
-    await channel.send({
-      type: 'broadcast', event: 'reveal_race', payload: { race_id: race.id },
-    })
-    // Also send to the picks/track default channels by name
-    await supabase.channel(`track-${event.id}`).send({
-      type: 'broadcast', event: 'reveal_race', payload: { race_id: race.id },
-    })
-    // Send player-specific channels by emitting on a wildcard pattern won't work; the picks page
-    // also subscribes to `picks-${player.id}` so we send a generic "reveal" channel:
-    await supabase.channel('reveals').send({
-      type: 'broadcast', event: 'reveal_race', payload: { race_id: race.id },
-    })
-    setTimeout(() => setRevealing(false), 1200)
+    // The track page subscribes to `track-${event.id}` and listens for
+    // 'reveal_race' broadcasts on it. To send on that channel we have to
+    // be JOINED first — the prior version called `.send()` without ever
+    // subscribing, which is why the broadcast never reached the track page.
+    const channel = supabase.channel(`track-${event.id}`)
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('subscribe timed out')), 5000)
+        channel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            clearTimeout(timer)
+            resolve()
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            clearTimeout(timer)
+            reject(new Error(status))
+          }
+        })
+      })
+      await channel.send({
+        type: 'broadcast',
+        event: 'reveal_race',
+        payload: { race_id: race.id },
+      })
+    } catch (e) {
+      console.error('Reveal broadcast failed:', e)
+      alert(`Couldn't broadcast reveal: ${e instanceof Error ? e.message : 'unknown error'}`)
+    } finally {
+      await supabase.removeChannel(channel)
+      setTimeout(() => setRevealing(false), 1200)
+    }
   }
 
+  // Picks summary uses the actual race results (finish_position 1/2/3),
+  // shown only once the race has been scored.
+  const winHorse = horses.find(h => h.finish_position === 1)
+  const placeHorse = horses.find(h => h.finish_position === 2)
+  const showHorse = horses.find(h => h.finish_position === 3)
+  const stop = (e: React.MouseEvent | React.PointerEvent) => e.stopPropagation()
+
   return (
-    <div className={`rounded-xl border-2 ${race.is_featured ? 'border-[var(--gold)]/60' : 'border-white/15'} bg-white/5 p-4`}>
-      <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
-        <div>
-          <div className="text-white/60 text-xs font-mono">RACE {race.race_number} {race.is_featured && <span className="text-[var(--gold)]">⭐ DERBY</span>}</div>
-          <h3 className="text-white font-serif text-lg font-bold">{race.name}</h3>
-          <div className="text-white/50 text-xs">{totalPicked} picks • status: <span className="font-bold">{race.status}</span></div>
+    <div
+      onClick={onToggle}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+      className={`rounded-xl border-2 ${race.is_featured ? 'border-[var(--gold)]/60' : 'border-white/15'} bg-white/5 p-4 cursor-pointer`}
+    >
+      {/* Header — always visible (collapsed view) */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="text-white/60 text-xs font-mono">
+            RACE {race.race_number} {race.is_featured && <span className="text-[var(--gold)]">⭐ DERBY</span>}
+          </div>
+          <h3 className="text-white font-serif text-lg font-bold truncate">{race.name}</h3>
+          <div className="text-white/50 text-xs">
+            {totalPicked} {calculated ? 'picks scored' : 'picks'}
+            {' • '}
+            status: <span className="font-bold">{race.status}</span>
+          </div>
+          {/* One-line race-result summary, shown only when scored */}
+          {calculated && (
+            <div className="mt-2 text-sm text-white/85 truncate">
+              <span>🥇 {winHorse?.name ?? '—'}</span>
+              <span className="mx-2 text-white/30">·</span>
+              <span>🥈 {placeHorse?.name ?? '—'}</span>
+              <span className="mx-2 text-white/30">·</span>
+              <span>🥉 {showHorse?.name ?? '—'}</span>
+            </div>
+          )}
         </div>
-        {calculated && <span className="text-emerald-400 text-sm font-bold">✓ Scored</span>}
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          {calculated ? (
+            <span className="text-emerald-400 text-sm font-bold">✓ Scored</span>
+          ) : (
+            <span className="text-amber-300 text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30">
+              Needs Results
+            </span>
+          )}
+          <span aria-hidden className="text-white/45 text-base leading-none select-none">
+            {expanded ? '▴' : '▾'}
+          </span>
+        </div>
       </div>
 
-      {horses.length === 0 ? (
-        <p className="text-white/50 text-sm">No horses to score yet.</p>
-      ) : (
-        <>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {[
-              { label: '🥇 Win', val: winId, set: setWinId },
-              { label: '🥈 Place', val: placeId, set: setPlaceId },
-              { label: '🥉 Show', val: showId, set: setShowId },
-            ].map(slot => (
-              <div key={slot.label}>
-                <div className="text-white/70 text-xs font-bold uppercase mb-1">{slot.label}</div>
-                <select value={slot.val} onChange={e => slot.set(e.target.value)} className="admin-input w-full text-sm h-12">
-                  <option value="">—</option>
-                  {horses.filter(h => !h.scratched).map(h => (
-                    <option key={h.id} value={h.id}>#{h.number} {h.name}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
+      {/* Expandable detail */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="detail"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="pt-3 mt-3 border-t border-white/10 space-y-3">
+              {horses.length === 0 ? (
+                <p className="text-white/50 text-sm">No horses to score yet.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: '🥇 Win', val: winId, set: setWinId },
+                      { label: '🥈 Place', val: placeId, set: setPlaceId },
+                      { label: '🥉 Show', val: showId, set: setShowId },
+                    ].map(slot => (
+                      <div key={slot.label} onClick={stop}>
+                        <div className="text-white/70 text-xs font-bold uppercase mb-1">{slot.label}</div>
+                        <select
+                          value={slot.val}
+                          onChange={e => slot.set(e.target.value)}
+                          onClick={stop}
+                          className="admin-input w-full text-sm h-12"
+                        >
+                          <option value="">—</option>
+                          {horses.filter(h => !h.scratched).map(h => (
+                            <option key={h.id} value={h.id}>#{h.number} {h.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
 
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={calculate} disabled={busy} className="px-5 h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold disabled:opacity-50">
-              {busy ? 'Calculating…' : calculated ? 'Recalculate Scores' : 'Calculate Scores'}
-            </button>
-            {calculated && event.score_reveal_mode === 'manual' && (
-              <button
-                onClick={dramaticReveal}
-                disabled={revealing}
-                className="px-5 h-12 rounded-full bg-[var(--gold)] text-black font-extrabold border-2 border-white/60 shadow-lg hover:bg-yellow-300 disabled:opacity-50"
-              >
-                {revealing ? '🎉 REVEALED!' : '✨ DRAMATIC REVEAL'}
-              </button>
-            )}
-          </div>
-        </>
-      )}
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); void calculate() }}
+                      disabled={busy}
+                      className="px-5 h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold disabled:opacity-50"
+                    >
+                      {busy ? 'Calculating…' : calculated ? 'Recalculate Scores' : 'Calculate Scores'}
+                    </button>
+                    {calculated && event.score_reveal_mode === 'manual' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); void dramaticReveal() }}
+                        disabled={revealing}
+                        className="px-5 h-12 rounded-full bg-[var(--gold)] text-black font-extrabold border-2 border-white/60 shadow-lg hover:bg-yellow-300 disabled:opacity-50"
+                      >
+                        {revealing ? '🎉 REVEALED!' : '✨ DRAMATIC REVEAL'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
 
-      {calculated && (
-        <div className="mt-3 pt-3 border-t border-white/10">
-          <div className="text-white/70 text-xs font-bold uppercase mb-2">Player Scores</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {scores
-              .map(s => ({ s, p: players.find(p => p.id === s.player_id) }))
-              .filter(x => x.p)
-              .sort((a, b) => b.s.final_points - a.s.final_points)
-              .map(({ s, p }) => (
-                <div key={s.id} className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/10">
-                  <AvatarIcon id={p!.avatar} className="w-7 h-7 rounded shrink-0" />
-                  <span className="text-white text-sm flex-1 truncate">{p!.name}</span>
-                  <span className="text-[var(--gold)] font-bold">+{s.final_points}</span>
-                  <span className="text-white/40 text-xs">({s.base_points}×{s.multiplier_applied})</span>
+              {calculated && (
+                <div className="pt-3 border-t border-white/10">
+                  <div className="text-white/70 text-xs font-bold uppercase mb-2">Player Scores</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {scores
+                      .map(s => ({ s, p: players.find(p => p.id === s.player_id) }))
+                      .filter(x => x.p)
+                      .sort((a, b) => b.s.final_points - a.s.final_points)
+                      .map(({ s, p }) => (
+                        <div key={s.id} className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/10">
+                          <AvatarIcon id={p!.avatar} className="w-7 h-7 rounded shrink-0" />
+                          <span className="text-white text-sm flex-1 truncate">{p!.name}</span>
+                          <span className="text-[var(--gold)] font-bold">+{s.final_points}</span>
+                          <span className="text-white/40 text-xs">({s.base_points}×{s.multiplier_applied})</span>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-              ))}
-          </div>
-        </div>
-      )}
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

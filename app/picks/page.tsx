@@ -576,6 +576,9 @@ export default function PicksPage() {
           <Link href="/track" className="flex-1 py-3 text-center text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold">
             🏁 Live Track
           </Link>
+          <Link href="/leaderboard" className="flex-1 py-3 text-center text-white/60 hover:text-white text-sm">
+            📊 Leaderboard
+          </Link>
         </div>
       </nav>
     </main>
@@ -851,6 +854,19 @@ function RaceCard({
           </div>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
+          {/* Score badge: bright gold for ≥2pts, muted for the 1pt consolation,
+              hidden for 0 / unrevealed / unscored. */}
+          {finished && score && score.final_points > 0 && (
+            score.final_points === 1 ? (
+              <span className="text-[11px] font-semibold text-[var(--gold)]/70 px-2 py-0.5 rounded-full border border-[var(--gold)]/30 bg-[var(--gold)]/5 leading-none tabular-nums">
+                +1
+              </span>
+            ) : (
+              <span className="text-base font-extrabold text-[var(--gold)] px-2.5 py-1 rounded-full border-2 border-[var(--gold)]/60 bg-[var(--gold)]/15 shadow shadow-[var(--gold)]/30 leading-none tabular-nums">
+                +{score.final_points}
+              </span>
+            )
+          )}
           <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${statusBadge.cls}`}>
             {statusBadge.label}
           </span>

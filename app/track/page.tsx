@@ -27,14 +27,20 @@ const TRACK_CY = 140                  // vertical center of the oval
 
 const OUTER_R = 110                   // outer rail radius (semicircles)
 const INNER_R = 55                    // inner rail radius
-const PATH_R = 82                     // mid-track path radius (racing line)
+// Racing line hugs the INSIDE rail (real horses run the shortest path on the
+// inner rail). The path sits one default-token radius (13) outside the inner
+// rail so a token at vOffset=0 puts its inner edge right against the rail.
+// Cluster offsets (defined further down) are one-sided and push outward from
+// here toward the outer rail, never inward into the infield.
+const RAIL_HUG_OFFSET = 13
+const PATH_R = INNER_R + RAIL_HUG_OFFSET  // 68 — curve racing radius
 
 const OUTER_TOP_Y = TRACK_CY - OUTER_R   // 30
 const OUTER_BOT_Y = TRACK_CY + OUTER_R   // 250
 const INNER_TOP_Y = TRACK_CY - INNER_R   // 85
 const INNER_BOT_Y = TRACK_CY + INNER_R   // 195
-const PATH_TOP_Y  = TRACK_CY - PATH_R    // 58
-const PATH_BOT_Y  = TRACK_CY + PATH_R    // 222
+const PATH_TOP_Y  = INNER_TOP_Y - RAIL_HUG_OFFSET   // 72 — top straight racing line
+const PATH_BOT_Y  = INNER_BOT_Y + RAIL_HUG_OFFSET   // 208 — bottom straight racing line
 
 const STRAIGHT_LEN = STRAIGHT_X_END - STRAIGHT_X_START   // 370
 const ARC_LEN = Math.PI * PATH_R                          // ≈ 257.6
@@ -132,6 +138,12 @@ export default function TrackPage() {
   const [players, setPlayers] = useState<Player[]>([])
   const [scores, setScores] = useState<Score[]>([])
   const [revealedRaces, setRevealedRaces] = useState<Set<string>>(new Set())
+  // Stagger window: when a `reveal_race` broadcast lands, we briefly turn
+  // on a per-player delay (last place first, leader last) so the field
+  // resolves in dramatic order. After the longest delay completes we drop
+  // back to the normal instant-spring transition.
+  const [revealAnimAt, setRevealAnimAt] = useState(0)
+  const revealResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [confettiKey, setConfettiKey] = useState(0)
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -199,6 +211,12 @@ export default function TrackPage() {
         })
       .on('broadcast', { event: 'reveal_race' }, ({ payload }) => {
         setRevealedRaces(prev => new Set([...prev, payload.race_id]))
+        // Kick off the staggered animation window. 30s is plenty even for
+        // a packed field — once it's done positions snap back to the
+        // normal zero-delay spring transition.
+        setRevealAnimAt(Date.now())
+        if (revealResetRef.current) clearTimeout(revealResetRef.current)
+        revealResetRef.current = setTimeout(() => setRevealAnimAt(0), 30000)
       })
       .subscribe()
 
@@ -247,15 +265,36 @@ export default function TrackPage() {
     [races]
   )
   const maxProgress = totalRaces > 0 ? envelopeRaces / totalRaces : 0
+  // Compressed spread: the field bunches together inside the back half of
+  // the current envelope. Anyone with even a single point jumps to at least
+  // 50% of maxProgress, and the leader sits at maxProgress. This keeps the
+  // pack visually dramatic instead of stretched thin in the early races.
+  // 0-point players still sit at the gate (progress = 0).
   const playersOnTrack = useMemo(() => {
+    const minProgress = maxProgress * 0.5
     return standings.map((row, idx) => {
       let trackProgress: number
-      if (leaderScore <= 0) trackProgress = 0
-      else trackProgress = maxProgress * (row.total / leaderScore)
+      if (row.total <= 0 || leaderScore <= 0) {
+        trackProgress = 0
+      } else {
+        trackProgress = minProgress + (row.total / leaderScore) * (maxProgress - minProgress)
+      }
       trackProgress = Math.max(0, Math.min(maxProgress, trackProgress))
       return { ...row, rank: idx + 1, trackProgress }
     })
   }, [standings, leaderScore, maxProgress])
+
+  // Per-player reveal delay. playersOnTrack is sorted by score desc (idx 0 =
+  // leader). We want LAST PLACE to animate first (delay 0) and the leader to
+  // animate last (delay (N-1)*0.5s) for maximum drama.
+  const playerRevealDelays = useMemo(() => {
+    const m = new Map<string, number>()
+    const N = playersOnTrack.length
+    playersOnTrack.forEach((row, idx) => {
+      m.set(row.player.id, (N - 1 - idx) * 0.5)
+    })
+    return m
+  }, [playersOnTrack])
 
   // Compact-token mode kicks in once the field gets crowded — smaller tokens
   // give more room for clustered players to fan out without crashing into
@@ -265,18 +304,21 @@ export default function TrackPage() {
 
   // Cluster handling:
   //   Up to 4 players sharing ~the same progress fan out perpendicular to
-  //   the path. A cluster of 5+ shows the first 3 plus a "+N more" badge in
-  //   the 4th slot, so every visible avatar stays at least partly readable.
-  // Threshold of 0.015 of TOTAL_LEN (~18 viewBox units along the path) is
-  // tight enough that distinct scores stay separate but tied players still
-  // collapse together.
+  //   the path. A cluster of 5+ shows the top 3 (by progress, ties broken
+  //   by source order) plus a "+N more" badge in the 4th slot.
+  //   Offsets are ONE-SIDED — slot 0 sits on the rail-hugging line, every
+  //   subsequent slot drifts outward toward the outer rail. The leader
+  //   (highest progress in a cluster) always gets the innermost slot.
+  //   Threshold 0.015 of TOTAL_LEN (~18 viewBox units along the path) is
+  //   tight enough that distinct scores stay separate but tied players
+  //   still collapse together.
   const CLUSTER_THRESHOLD = 0.015
   const MAX_VISIBLE_PER_CLUSTER = 4
   const OFFSET_TABLE: Record<number, number[]> = {
     1: [0],
-    2: [-8, 8],
-    3: [-12, 0, 12],
-    4: [-12, -4, 4, 12],
+    2: [0, 14],
+    3: [0, 11, 22],
+    4: [0, 8, 16, 24],
   }
   const { positionedPlayers, clusterOverflows } = useMemo(() => {
     const sorted = [...playersOnTrack].sort((a, b) => a.trackProgress - b.trackProgress)
@@ -293,17 +335,20 @@ export default function TrackPage() {
         cluster.push(sorted[i + cluster.length])
       }
 
-      if (cluster.length <= MAX_VISIBLE_PER_CLUSTER) {
-        const offsets = OFFSET_TABLE[cluster.length]
-        cluster.forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
+      // Reverse so the leader (highest progress) lands in slot 0 = rail.
+      const ordered = [...cluster].reverse()
+
+      if (ordered.length <= MAX_VISIBLE_PER_CLUSTER) {
+        const offsets = OFFSET_TABLE[ordered.length]
+        ordered.forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
       } else {
-        // Show first 3 in slots 0-2 of the 4-slot table; reuse slot 3 for the badge.
+        // Top 3 visible on the rail side; "+N more" badge takes slot 3.
         const offsets = OFFSET_TABLE[4]
-        cluster.slice(0, 3).forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
+        ordered.slice(0, 3).forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
         overflows.push({
-          progress: cluster[0].trackProgress,
+          progress: ordered[0].trackProgress,
           vOffset: offsets[3],
-          count: cluster.length - 3,
+          count: ordered.length - 3,
         })
       }
 
@@ -360,15 +405,18 @@ export default function TrackPage() {
   return (
     <main className="min-h-screen flex flex-col bg-derby">
       {/* Top header */}
-      <header className="px-4 py-3 flex items-center justify-between border-b border-white/10 backdrop-blur-sm bg-black/30">
-        <Link href="/" className="text-white/60 hover:text-white text-sm">← Home</Link>
-        <div className="text-center">
-          <h1 className="font-serif text-lg sm:text-xl font-bold text-white leading-tight">{event?.name ?? 'Live Track'}</h1>
-          <div className="text-[var(--gold)]/80 text-xs">
+      <header className="px-4 py-3 flex items-center justify-between border-b border-white/10 backdrop-blur-sm bg-black/30 gap-3">
+        <Link href="/" className="text-white/60 hover:text-white text-sm shrink-0">← Home</Link>
+        <div className="text-center min-w-0">
+          <h1 className="font-serif text-lg sm:text-xl font-bold text-white leading-tight truncate">{event?.name ?? 'Live Track'}</h1>
+          <div className="text-[var(--gold)]/80 text-xs truncate">
             {completedRaces}/{totalRaces} races • {players.length} players
           </div>
         </div>
-        <Link href="/picks" className="text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold">My Picks</Link>
+        <div className="flex items-center gap-3 shrink-0">
+          <Link href="/leaderboard" className="text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold whitespace-nowrap">📊 Leaderboard</Link>
+          <Link href="/picks" className="text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold whitespace-nowrap">My Picks</Link>
+        </div>
       </header>
 
       {/* Track SVG */}
@@ -566,6 +614,7 @@ export default function TrackPage() {
                 isLeader={isLeader}
                 showName={!compactTokens && positionedPlayers.length <= 12}
                 radius={TOKEN_RADIUS}
+                revealDelay={revealAnimAt > 0 ? (playerRevealDelays.get(row.player.id) ?? 0) : 0}
                 onTap={() => setSelectedPlayer(row.player.id)}
               />
             )
@@ -604,32 +653,8 @@ export default function TrackPage() {
         </AnimatePresence>
       </div>
 
-      {/* Mini leaderboard */}
-      <footer className="border-t border-white/10 bg-black/40 backdrop-blur-sm">
-        <div className="overflow-x-auto no-scrollbar">
-          <div className="flex gap-2 px-3 py-3 min-w-max">
-            {standings.slice(0, 12).map((row, idx) => {
-              const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
-              return (
-                <button
-                  key={row.player.id}
-                  onClick={() => setSelectedPlayer(row.player.id)}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-sm shrink-0"
-                >
-                  <span className="text-white/60 text-xs font-mono w-5 text-right">#{idx + 1}</span>
-                  <AvatarIcon id={row.player.avatar} className="w-7 h-7 rounded-full" />
-                  <span className="text-white font-semibold">{row.player.name}</span>
-                  <span className="text-[var(--gold)] font-bold">{row.total}</span>
-                  {medal && <span>{medal}</span>}
-                </button>
-              )
-            })}
-            {standings.length === 0 && (
-              <div className="px-3 py-2 text-white/60 text-sm">No players yet — share the join link!</div>
-            )}
-          </div>
-        </div>
-      </footer>
+      {/* Mini leaderboard ticker */}
+      <LeaderboardTicker standings={standings} onSelect={setSelectedPlayer} />
 
       {/* Powered by Watch Party */}
       <div className="flex justify-center mt-8 pb-6 px-4">
@@ -684,16 +709,105 @@ export default function TrackPage() {
   )
 }
 
+// ─── LeaderboardTicker ──────────────────────────────────────────────────────
+// Auto-scrolling marquee at the bottom of the track page. Renders the full
+// standings list twice so the scroll wraps seamlessly: every animation frame
+// nudges scrollLeft forward, and once we've passed the first copy we subtract
+// halfWidth (which lands on visually identical content). Pointer interaction
+// pauses the auto-scroll for 2s of grace so users can flick to a specific
+// player without fighting the marquee.
+
+function LeaderboardTicker({
+  standings, onSelect,
+}: {
+  standings: Array<{ player: Player; total: number }>
+  onSelect: (id: string) => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const interactingRef = useRef(false)
+  const lastInteractionRef = useRef(0)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    let raf = 0
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      if (interactingRef.current) return
+      if (Date.now() - lastInteractionRef.current < 2000) return
+      const half = el.scrollWidth / 2
+      if (half <= el.clientWidth) return // nothing to scroll
+      el.scrollLeft += 0.6 // ≈ 36 px/s at 60fps
+      if (el.scrollLeft >= half) el.scrollLeft -= half
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [standings.length])
+
+  if (standings.length === 0) {
+    return (
+      <footer className="border-t border-white/10 bg-black/40 backdrop-blur-sm">
+        <div className="px-3 py-3 text-white/60 text-sm text-center">
+          No players yet — share the join link!
+        </div>
+      </footer>
+    )
+  }
+
+  const renderRow = (row: typeof standings[number], idx: number, copy: 'a' | 'b') => {
+    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
+    return (
+      <button
+        key={`${copy}-${row.player.id}`}
+        onClick={() => onSelect(row.player.id)}
+        aria-hidden={copy === 'b'}
+        tabIndex={copy === 'b' ? -1 : 0}
+        className="flex items-center gap-2 px-2 py-1.5 rounded-full border border-white/15 bg-white/5 hover:bg-white/10 text-sm shrink-0"
+      >
+        <span className="text-white/60 text-xs font-mono w-5 text-right">#{idx + 1}</span>
+        <AvatarIcon id={row.player.avatar} className="w-7 h-7 rounded-full" />
+        <span className="text-white font-semibold">{row.player.name}</span>
+        <span className="text-[var(--gold)] font-bold">{row.total}</span>
+        {medal && <span>{medal}</span>}
+      </button>
+    )
+  }
+
+  const handleInteractEnd = () => {
+    interactingRef.current = false
+    lastInteractionRef.current = Date.now()
+  }
+
+  return (
+    <footer className="border-t border-white/10 bg-black/40 backdrop-blur-sm">
+      <div
+        ref={containerRef}
+        className="overflow-x-auto no-scrollbar"
+        onPointerDown={() => { interactingRef.current = true }}
+        onPointerUp={handleInteractEnd}
+        onPointerCancel={handleInteractEnd}
+        onPointerLeave={() => { if (interactingRef.current) handleInteractEnd() }}
+      >
+        <div className="flex gap-2 px-3 py-3 min-w-max">
+          {standings.map((row, idx) => renderRow(row, idx, 'a'))}
+          {standings.map((row, idx) => renderRow(row, idx, 'b'))}
+        </div>
+      </div>
+    </footer>
+  )
+}
+
 // ─── PlayerToken ────────────────────────────────────────────────────────────
 
 function PlayerToken({
-  pos, player, isLeader, showName, radius, onTap,
+  pos, player, isLeader, showName, radius, revealDelay, onTap,
 }: {
   pos: { x: number; y: number }
   player: Player
   isLeader: boolean
   showName: boolean
   radius: number
+  revealDelay: number
   onTap: () => void
 }) {
   const av = getAvatar(player.avatar)
@@ -707,7 +821,7 @@ function PlayerToken({
     <motion.g
       initial={false}
       animate={{ x: pos.x, y: pos.y }}
-      transition={{ type: 'spring', stiffness: 70, damping: 18 }}
+      transition={{ type: 'spring', stiffness: 70, damping: 18, delay: revealDelay }}
       style={{ cursor: 'pointer' }}
       onClick={onTap}
       filter="url(#tokenShadow)"
