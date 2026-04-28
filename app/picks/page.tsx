@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon, AVATARS } from '@/lib/avatars'
 import { parseLocalIso } from '@/lib/time'
+import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 type PickDraft = {
@@ -34,6 +35,11 @@ export default function PicksPage() {
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set())
   const [adminAlert, setAdminAlert] = useState<string | null>(null)
   const [changeAvatarOpen, setChangeAvatarOpen] = useState(false)
+  const [expandedRaces, setExpandedRaces] = useState<Set<string>>(new Set())
+  // Ref keeps the first-load defaults from being re-applied every time
+  // realtime updates re-fire the effect — once the user has interacted with
+  // a card we don't want to undo their toggles.
+  const expandInitializedRef = useRef(false)
 
   async function loadAll() {
     if (typeof window === 'undefined') return
@@ -225,6 +231,24 @@ export default function PicksPage() {
     return () => { void supabase.removeChannel(channel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id, player?.id])
+
+  // First-load expansion defaults: only upcoming/open races without picks
+  // start expanded. Finished, locked, and already-picked races collapse.
+  // Ref-guarded so realtime updates don't reset user toggles.
+  useEffect(() => {
+    if (expandInitializedRef.current) return
+    if (loading || races.length === 0) return
+    expandInitializedRef.current = true
+    const defaults = new Set<string>()
+    for (const r of races) {
+      if (r.status === 'finished' || r.status === 'locked') continue
+      const racePick = picks.find(p => p.race_id === r.id)
+      const hasPicks = !!(racePick && (racePick.win_horse_id || racePick.place_horse_id || racePick.show_horse_id))
+      if (!hasPicks) defaults.add(r.id)
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setExpandedRaces(defaults)
+  }, [loading, races, picks])
 
   // Effective revealed set: in auto mode, every race is implicitly revealed;
   // in manual mode, only those broadcast by admin (or already in `revealedRaces`).
@@ -432,9 +456,22 @@ export default function PicksPage() {
       {/* Race Cards */}
       <section className="px-5">
         <div className="max-w-2xl mx-auto">
-          <h3 className="text-white/80 text-sm uppercase tracking-wider font-semibold mb-2">
-            Races
-          </h3>
+          <div className="flex items-end justify-between mb-2 gap-3">
+            <h3 className="text-white/80 text-sm uppercase tracking-wider font-semibold">
+              Races
+            </h3>
+            {races.length > 1 && (() => {
+              const allExpanded = races.every(r => expandedRaces.has(r.id))
+              return (
+                <button
+                  onClick={() => setExpandedRaces(allExpanded ? new Set() : new Set(races.map(r => r.id)))}
+                  className="text-white/65 hover:text-white text-xs font-semibold underline-offset-2 hover:underline"
+                >
+                  {allExpanded ? 'Collapse All' : 'Expand All'}
+                </button>
+              )
+            })()}
+          </div>
           {races.length === 0 ? (
             <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-center text-white/60">
               No races posted yet. The host will set them up before post time.
@@ -455,6 +492,13 @@ export default function PicksPage() {
                   }
                   multiplierVisible={event.multiplier_visible}
                   now={now}
+                  expanded={expandedRaces.has(race.id)}
+                  onToggle={() => setExpandedRaces(prev => {
+                    const next = new Set(prev)
+                    if (next.has(race.id)) next.delete(race.id)
+                    else next.add(race.id)
+                    return next
+                  })}
                   onPick={() => setOpenModalRaceId(race.id)}
                 />
               ))}
@@ -517,6 +561,11 @@ export default function PicksPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* Powered by Watch Party — pb-20 clears the fixed bottom nav below */}
+      <div className="flex justify-center mt-8 pb-20 px-4">
+        <WatchPartyBadge />
+      </div>
 
       {/* Bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 bg-[var(--dark)]/95 border-t border-white/10 backdrop-blur-sm z-10">
@@ -633,7 +682,8 @@ function TokenCard({
 
 // ----- RACE CARD -----
 function RaceCard({
-  race, horses, pick, score, scoreRevealed, multiplier, multiplierVisible, now, onPick,
+  race, horses, pick, score, scoreRevealed, multiplier, multiplierVisible, now,
+  expanded, onToggle, onPick,
 }: {
   race: Race
   horses: Horse[]
@@ -643,6 +693,8 @@ function RaceCard({
   multiplier: '2x' | '3x' | null
   multiplierVisible: boolean
   now: number
+  expanded: boolean
+  onToggle: () => void
   onPick: () => void
 }) {
   const horseById = (id: string | null) => horses.find(h => h.id === id) ?? null
@@ -673,7 +725,8 @@ function RaceCard({
   })()
 
   // Live countdown for races still accepting picks. Hides once locked/finished.
-  // Format: M:SS under one hour, H:MM:SS at one hour or more.
+  // H:MM (no seconds) at ≥1h, M:SS under 1h. Color/pulse escalate as post time
+  // approaches: white (>5m) → gold solid (<5m) → red solid pulsing (<1m).
   const postTimeLocal = parseLocalIso(race.post_time)
   const countdown = (() => {
     if (race.status === 'locked' || race.status === 'finished') return null
@@ -681,18 +734,27 @@ function RaceCard({
     const ms = postTimeLocal.getTime() - now
     const secondsLeft = Math.floor(ms / 1000)
     if (secondsLeft < 0) {
-      return { text: 'Post Time', secondsLeft: -1, cls: 'bg-red-600/30 text-red-200 border-red-500/50' }
+      return {
+        text: 'POST TIME',
+        secondsLeft: -1,
+        cls: 'bg-red-600 text-white border-red-400',
+        pulse: false,
+        atPost: true,
+      }
     }
     const h = Math.floor(secondsLeft / 3600)
     const m = Math.floor((secondsLeft % 3600) / 60)
     const s = secondsLeft % 60
-    const formatted = h > 0
-      ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    const text = h > 0
+      ? `${h}:${String(m).padStart(2, '0')}`
       : `${m}:${String(s).padStart(2, '0')}`
-    const text = `Locks in ${formatted}`
-    if (secondsLeft < 60) return { text, secondsLeft, cls: 'bg-red-600/30 text-red-200 border-red-500/60 animate-pulse' }
-    if (secondsLeft < 300) return { text, secondsLeft, cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50' }
-    return { text, secondsLeft, cls: 'bg-white/10 text-white/75 border-white/20' }
+    if (secondsLeft < 60) {
+      return { text, secondsLeft, cls: 'bg-red-600 text-white border-red-400', pulse: true, atPost: false }
+    }
+    if (secondsLeft < 300) {
+      return { text, secondsLeft, cls: 'bg-[var(--gold)] text-[var(--dark)] border-[var(--gold)]', pulse: false, atPost: false }
+    }
+    return { text, secondsLeft, cls: 'bg-white/10 text-white border-white/25', pulse: false, atPost: false }
   })()
 
   const canPick = race.status === 'open' || race.status === 'upcoming'
@@ -707,8 +769,29 @@ function RaceCard({
           ? 'border-[var(--gold)]/60 bg-gradient-to-br from-[var(--rose-dark)]/30 to-black/40'
           : 'border-white/15 bg-white/5'
 
+  // One-line picks summary used in the always-visible (collapsed) header.
+  const hasPicks = !!(pick && (pick.win_horse_id || pick.place_horse_id || pick.show_horse_id))
+  const pickSummary = hasPicks ? (
+    <>
+      <span>🥇 {horseById(pick!.win_horse_id)?.name ?? '—'}</span>
+      <span className="mx-2 text-white/30">·</span>
+      <span>🥈 {horseById(pick!.place_horse_id)?.name ?? '—'}</span>
+      <span className="mx-2 text-white/30">·</span>
+      <span>🥉 {horseById(pick!.show_horse_id)?.name ?? '—'}</span>
+    </>
+  ) : (
+    <span className="italic text-white/45">No picks yet</span>
+  )
+
   return (
-    <div className={`relative rounded-xl border-2 p-4 ${cardClasses}`}>
+    <div
+      onClick={onToggle}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
+      className={`relative rounded-xl border-2 p-4 cursor-pointer ${cardClasses}`}
+    >
       {/* Token ribbon — sits at the top-right corner when this race is boosted */}
       {tokenBoost && (
         <div className="absolute -top-3 right-3 z-10">
@@ -728,8 +811,8 @@ function RaceCard({
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
+      {/* Header — always visible (collapsed view) */}
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-white/50 text-xs font-mono">RACE {race.race_number}</span>
@@ -747,77 +830,109 @@ function RaceCard({
             {postTimeLocal && (
               <span>{postTimeLocal.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
             )}
-            {countdown && (
-              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${countdown.cls}`}>
-                {countdown.text}
-              </span>
-            )}
+          </div>
+          {countdown && (
+            <div
+              className={`mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 shadow-sm ${countdown.cls} ${countdown.pulse ? 'animate-pulse' : ''}`}
+            >
+              {countdown.atPost ? (
+                <span className="text-[14px] font-extrabold uppercase tracking-wider">⚑ {countdown.text}</span>
+              ) : (
+                <>
+                  <span className="text-[12px] font-bold uppercase tracking-wider opacity-80">Post Time In</span>
+                  <span className="text-[16px] font-extrabold font-mono tabular-nums leading-none">{countdown.text}</span>
+                </>
+              )}
+            </div>
+          )}
+          {/* Picks summary — visible whether expanded or collapsed */}
+          <div className="mt-2 text-sm text-white/75 truncate">
+            {pickSummary}
           </div>
         </div>
-        <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${statusBadge.cls}`}>
-          {statusBadge.label}
-        </span>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${statusBadge.cls}`}>
+            {statusBadge.label}
+          </span>
+          <span aria-hidden className="text-white/45 text-base leading-none select-none">
+            {expanded ? '▴' : '▾'}
+          </span>
+        </div>
       </div>
 
-      {/* Picks */}
-      {pick && (pick.win_horse_id || pick.place_horse_id || pick.show_horse_id) ? (
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          {(['win', 'place', 'show'] as const).map(slot => {
-            const horseId = slot === 'win' ? pick.win_horse_id : slot === 'place' ? pick.place_horse_id : pick.show_horse_id
-            const h = horseById(horseId)
-            return (
-              <div key={slot} className={`rounded-lg border-2 ${slotColor(slot, horseId)} p-2 text-center transition-colors`}>
-                <div className="text-[10px] uppercase tracking-wider text-white/50 font-bold">
-                  {slot === 'win' ? '1st' : slot === 'place' ? '2nd' : '3rd'}
-                </div>
-                {h ? (
-                  <>
-                    <div className="text-white font-bold text-sm">#{h.number}</div>
-                    <div className="text-white/80 text-[11px] truncate">{h.name}</div>
-                  </>
-                ) : (
-                  <div className="text-white/30 text-xs italic">—</div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        race.status !== 'finished' && (
-          <div className="text-white/50 text-sm italic mb-3">No picks yet</div>
-        )
-      )}
-
-      {/* Results / Action */}
-      {finished && score ? (
-        <div className="flex items-center justify-between border-t border-white/10 pt-3">
-          <div className="text-xs text-white/60">
-            🥇 #{winHorse?.number ?? '?'} • 🥈 #{placeHorse?.number ?? '?'} • 🥉 #{showHorse?.number ?? '?'}
-          </div>
-          <div className="text-right">
-            <div className="text-[var(--gold)] font-bold text-xl leading-none">
-              +{score.final_points}
-            </div>
-            <div className="text-white/50 text-[10px]">
-              {score.base_points} × {score.multiplier_applied}
-            </div>
-          </div>
-        </div>
-      ) : finished ? (
-        <div className="text-white/50 text-sm italic border-t border-white/10 pt-3">
-          You didn&apos;t pick this race.
-        </div>
-      ) : (
-        canPick && (
-          <button
-            onClick={onPick}
-            disabled={horses.length === 0}
-            className="w-full h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-base disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+      {/* Expandable detail */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="detail"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            style={{ overflow: 'hidden' }}
           >
-            {horses.length === 0 ? 'Waiting for horses...' : (pick && (pick.win_horse_id || pick.place_horse_id) ? 'Edit Picks' : 'Make Picks')}
-          </button>
-        )
-      )}
+            <div className="pt-3 mt-3 border-t border-white/10 space-y-3">
+              {/* Pick boxes */}
+              {hasPicks ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {(['win', 'place', 'show'] as const).map(slot => {
+                    const horseId = slot === 'win' ? pick!.win_horse_id : slot === 'place' ? pick!.place_horse_id : pick!.show_horse_id
+                    const h = horseById(horseId)
+                    return (
+                      <div key={slot} className={`rounded-lg border-2 ${slotColor(slot, horseId)} p-2 text-center transition-colors`}>
+                        <div className="text-[10px] uppercase tracking-wider text-white/50 font-bold">
+                          {slot === 'win' ? '1st' : slot === 'place' ? '2nd' : '3rd'}
+                        </div>
+                        {h ? (
+                          <>
+                            <div className="text-white font-bold text-sm">#{h.number}</div>
+                            <div className="text-white/80 text-[11px] truncate">{h.name}</div>
+                          </>
+                        ) : (
+                          <div className="text-white/30 text-xs italic">—</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : race.status !== 'finished' && (
+                <div className="text-white/50 text-sm italic">No picks yet</div>
+              )}
+
+              {/* Results / Action */}
+              {finished && score ? (
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-white/60">
+                    🥇 #{winHorse?.number ?? '?'} • 🥈 #{placeHorse?.number ?? '?'} • 🥉 #{showHorse?.number ?? '?'}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[var(--gold)] font-bold text-xl leading-none">
+                      +{score.final_points}
+                    </div>
+                    <div className="text-white/50 text-[10px]">
+                      {score.base_points} × {score.multiplier_applied}
+                    </div>
+                  </div>
+                </div>
+              ) : finished ? (
+                <div className="text-white/50 text-sm italic">
+                  You didn&apos;t pick this race.
+                </div>
+              ) : (
+                canPick && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onPick() }}
+                    disabled={horses.length === 0}
+                    className="w-full h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-base disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+                  >
+                    {horses.length === 0 ? 'Waiting for horses...' : (hasPicks ? 'Edit Picks' : 'Make Picks')}
+                  </button>
+                )
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

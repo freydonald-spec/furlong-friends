@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Playfair_Display } from "next/font/google";
+import { Geist, Playfair_Display, Press_Start_2P } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,6 +12,12 @@ const playfair = Playfair_Display({
   subsets: ["latin"],
   weight: ["400", "600", "700", "800", "900"],
   style: ["normal", "italic"],
+});
+
+const pressStart = Press_Start_2P({
+  variable: "--font-press-start",
+  subsets: ["latin"],
+  weight: "400",
 });
 
 export const metadata: Metadata = {
@@ -33,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${playfair.variable}`}>
+    <html lang="en" className={`${geistSans.variable} ${playfair.variable} ${pressStart.variable}`}>
       <body className="min-h-screen bg-derby text-white">{children}</body>
     </html>
   );

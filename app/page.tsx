@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WatchPartyBadge } from "@/lib/watch-party-badge";
 
 export default function SplashPage() {
   return (
@@ -54,8 +55,9 @@ export default function SplashPage() {
         </div>
       </div>
 
-      {/* Admin link */}
-      <div className="relative z-10">
+      {/* Footer */}
+      <div className="relative z-10 flex flex-col items-center gap-4">
+        <WatchPartyBadge className="mt-8" />
         <Link
           href="/admin"
           className="text-white/30 text-sm hover:text-white/60 transition-colors"

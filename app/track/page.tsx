@@ -5,69 +5,80 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { getAvatar, AvatarIcon } from '@/lib/avatars'
+import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import type { Event, Race, Player, Score } from '@/lib/types'
 
-// ─── Stadium track geometry (SVG viewBox 0 0 800 280) ──────────────────────
-// The track is a horizontal stadium: long straight sides + tight semicircle ends.
-// All numbers are in viewBox units.
+// ─── Track geometry (SVG viewBox 0 0 800 280) ─────────────────────────────
+// Horizontal oval (long straights + semicircle ends) with a horizontal
+// chute that extends right from the top of the oval. The starting gate
+// sits at the far-right end of the chute. Race path runs counter-clockwise:
+//   gate → chute (R→L) → backstretch (R→L) → far turn (top→bottom via the
+//   left semicircle) → homestretch (L→R) → finish line.
+// Real Churchill Downs (and all US horse racing) runs counter-clockwise —
+// the user's described layout (top-right gate, bottom-right finish, "left
+// turn" first) only resolves into a coherent path going CCW. The right
+// semicircle of the oval is visual only; the racing path skips it.
 const VIEWBOX_W = 800
 const VIEWBOX_H = 280
 
-const STRAIGHT_X_START = 200          // left end of straight portion
-const STRAIGHT_X_END = 600            // right end of straight portion
-const TRACK_CY = 140                  // vertical center of the track
+const STRAIGHT_X_START = 170          // left end of straight portion
+const STRAIGHT_X_END = 540            // right end of straight portion (oval)
+const TRACK_CY = 140                  // vertical center of the oval
 
-const OUTER_R = 120                   // outer rail radius (semicircles)
-const INNER_R = 60                    // inner rail radius
-const PATH_R = 90                     // mid-track path radius (avatars travel here)
+const OUTER_R = 110                   // outer rail radius (semicircles)
+const INNER_R = 55                    // inner rail radius
+const PATH_R = 82                     // mid-track path radius (racing line)
 
-// Y coordinates of the straight rails / path
-const OUTER_TOP_Y = TRACK_CY - OUTER_R   // 20
-const OUTER_BOT_Y = TRACK_CY + OUTER_R   // 260
-const INNER_TOP_Y = TRACK_CY - INNER_R   // 80
-const INNER_BOT_Y = TRACK_CY + INNER_R   // 200
-const PATH_TOP_Y  = TRACK_CY - PATH_R    // 50
-const PATH_BOT_Y  = TRACK_CY + PATH_R    // 230
+const OUTER_TOP_Y = TRACK_CY - OUTER_R   // 30
+const OUTER_BOT_Y = TRACK_CY + OUTER_R   // 250
+const INNER_TOP_Y = TRACK_CY - INNER_R   // 85
+const INNER_BOT_Y = TRACK_CY + INNER_R   // 195
+const PATH_TOP_Y  = TRACK_CY - PATH_R    // 58
+const PATH_BOT_Y  = TRACK_CY + PATH_R    // 222
 
-const STRAIGHT_LEN = STRAIGHT_X_END - STRAIGHT_X_START   // 400
-const ARC_LEN = Math.PI * PATH_R                          // ≈ 282.7
-// Path follows: bottom (L→R) + right semicircle + top (R→L) + left semicircle + bottom (L→R) again
-// 1¼ laps so START and FINISH end up at distinct points on the home stretch.
-const TOTAL_LEN = 3 * STRAIGHT_LEN + 2 * ARC_LEN          // ≈ 1765.5
+const STRAIGHT_LEN = STRAIGHT_X_END - STRAIGHT_X_START   // 370
+const ARC_LEN = Math.PI * PATH_R                          // ≈ 257.6
+
+// Chute: extends right from the top of the oval. The chute GRAPHIC fills
+// x = CHUTE_X_START..CHUTE_X_END; the racing PATH starts at GATE_CENTER_X
+// (centered inside the gate, well inside the chute's right edge) so 0-point
+// players render IN the gate rather than past it. The two lengths are
+// kept separate to avoid the dirt rect getting clipped.
+const CHUTE_X_START = STRAIGHT_X_END                      // 540
+const CHUTE_X_END = 770                                   // 770 — chute right edge
+const CHUTE_LEN = CHUTE_X_END - CHUTE_X_START             // 230 — visual width
+const GATE_CENTER_X = CHUTE_X_END - 15                    // 755 — racing path start
+const CHUTE_PATH_LEN = GATE_CENTER_X - CHUTE_X_START      // 215 — racing path length
+
+// Race path = chute + backstretch + far turn + homestretch
+const TOTAL_LEN = CHUTE_PATH_LEN + STRAIGHT_LEN + ARC_LEN + STRAIGHT_LEN
+//              ≈ 215 + 370 + 257.6 + 370 ≈ 1212.6
 
 /**
- * Maps race progress (0..1) to an (x, y) point on the stadium path.
- * `vOffset` shifts the avatar perpendicular to the track (radially on curves,
- * vertically on straights). Positive offset = away from infield.
+ * Maps race progress (0..1) to an (x, y) point on the racing path.
+ * `vOffset` shifts the avatar perpendicular to the path. Positive offset =
+ * outward (away from infield), negative = inward.
  */
 function positionAt(progress: number, vOffset = 0): { x: number; y: number } {
   const p = Math.max(0, Math.min(1, progress))
   let d = p * TOTAL_LEN
 
-  // 1. Bottom straight (left → right)
-  if (d <= STRAIGHT_LEN) {
-    return { x: STRAIGHT_X_START + d, y: PATH_BOT_Y + vOffset }
+  // 1. Chute (right→left): from gate center (GATE_CENTER_X) to oval entry (CHUTE_X_START)
+  if (d <= CHUTE_PATH_LEN) {
+    return { x: GATE_CENTER_X - d, y: PATH_TOP_Y - vOffset }
   }
-  d -= STRAIGHT_LEN
+  d -= CHUTE_PATH_LEN
 
-  // 2. Right semicircle clockwise: (600, 230) → (600, 50)
-  if (d <= ARC_LEN) {
-    const u = d / PATH_R
-    const r = PATH_R + vOffset
-    return {
-      x: STRAIGHT_X_END + r * Math.sin(u),
-      y: TRACK_CY + r * Math.cos(u),
-    }
-  }
-  d -= ARC_LEN
-
-  // 3. Top straight (right → left)
+  // 2. Backstretch / top straight (right→left)
   if (d <= STRAIGHT_LEN) {
     return { x: STRAIGHT_X_END - d, y: PATH_TOP_Y - vOffset }
   }
   d -= STRAIGHT_LEN
 
-  // 4. Left semicircle clockwise: (200, 50) → (200, 230)
+  // 3. Far turn / left semicircle (top → bottom via the leftmost point)
+  //    At u=0: (STRAIGHT_X_START, PATH_TOP_Y)
+  //    At u=π/2: (STRAIGHT_X_START - PATH_R, TRACK_CY)
+  //    At u=π: (STRAIGHT_X_START, PATH_BOT_Y)
   if (d <= ARC_LEN) {
     const u = d / PATH_R
     const r = PATH_R + vOffset
@@ -78,11 +89,11 @@ function positionAt(progress: number, vOffset = 0): { x: number; y: number } {
   }
   d -= ARC_LEN
 
-  // 5. Bottom straight again to FINISH at (600, 230)
+  // 4. Homestretch / bottom straight (left→right) → finish at STRAIGHT_X_END
   return { x: STRAIGHT_X_START + d, y: PATH_BOT_Y + vOffset }
 }
 
-// SVG path strings for the stadium rails (used for filled regions and outline strokes)
+// SVG path strings for the rails
 const OUTER_RAIL_D =
   `M ${STRAIGHT_X_START} ${OUTER_TOP_Y}` +
   ` L ${STRAIGHT_X_END} ${OUTER_TOP_Y}` +
@@ -97,12 +108,21 @@ const INNER_RAIL_D =
   ` L ${STRAIGHT_X_START} ${INNER_BOT_Y}` +
   ` A ${INNER_R} ${INNER_R} 0 0 1 ${STRAIGHT_X_START} ${INNER_TOP_Y} Z`
 
+// Chute outline: top edge → right end cap → bottom edge.
+// Left side intentionally open — that's where the chute joins the oval.
+const CHUTE_OUTLINE_D =
+  `M ${CHUTE_X_START} ${OUTER_TOP_Y}` +
+  ` L ${CHUTE_X_END} ${OUTER_TOP_Y}` +
+  ` L ${CHUTE_X_END} ${INNER_TOP_Y}` +
+  ` L ${CHUTE_X_START} ${INNER_TOP_Y}`
+
+// Center lane (dashed) — only along the racing path (gate center → finish).
+// Left arc uses sweep=0 to bulge LEFT (the path goes via the leftmost point).
 const CENTER_LANE_D =
-  `M ${STRAIGHT_X_START} ${PATH_TOP_Y}` +
-  ` L ${STRAIGHT_X_END} ${PATH_TOP_Y}` +
-  ` A ${PATH_R} ${PATH_R} 0 0 1 ${STRAIGHT_X_END} ${PATH_BOT_Y}` +
-  ` L ${STRAIGHT_X_START} ${PATH_BOT_Y}` +
-  ` A ${PATH_R} ${PATH_R} 0 0 1 ${STRAIGHT_X_START} ${PATH_TOP_Y} Z`
+  `M ${GATE_CENTER_X} ${PATH_TOP_Y}` +
+  ` L ${STRAIGHT_X_START} ${PATH_TOP_Y}` +
+  ` A ${PATH_R} ${PATH_R} 0 0 0 ${STRAIGHT_X_START} ${PATH_BOT_Y}` +
+  ` L ${STRAIGHT_X_END} ${PATH_BOT_Y}`
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
@@ -213,40 +233,85 @@ export default function TrackPage() {
 
   const leaderScore = standings[0]?.total ?? 0
 
-  // Map each player to a track progress.
-  // Top scorer anchors near (but never at) the finish line; everyone else
-  // is positioned proportionally behind based on their share of the leader's
-  // score. This guarantees no one ever completes a full loop or overlaps
-  // with players still near the start.
-  const LEADER_ANCHOR = 0.92
+  // The track is divided into N segments where N = total races. The leader's
+  // maximum reachable position grows by 1/N each time a race locks or finishes
+  // — after race 1 of 9 the leader can be at most 1/9 around the track, after
+  // race 5 of 9, 5/9 around, and so on. Everyone else scales proportionally
+  // by (score / leaderScore) within that envelope. A 0-point player sits at
+  // the starting gate.
+  // Note: the envelope tracks "racing has happened" (locked or finished),
+  // independent of the host's score-reveal flow which still gates the
+  // finale trigger via `raceProgress`.
+  const envelopeRaces = useMemo(
+    () => races.filter(r => r.status === 'finished' || r.status === 'locked').length,
+    [races]
+  )
+  const maxProgress = totalRaces > 0 ? envelopeRaces / totalRaces : 0
   const playersOnTrack = useMemo(() => {
     return standings.map((row, idx) => {
       let trackProgress: number
       if (leaderScore <= 0) trackProgress = 0
-      else trackProgress = LEADER_ANCHOR * (row.total / leaderScore)
-      trackProgress = Math.max(0, Math.min(LEADER_ANCHOR, trackProgress))
+      else trackProgress = maxProgress * (row.total / leaderScore)
+      trackProgress = Math.max(0, Math.min(maxProgress, trackProgress))
       return { ...row, rank: idx + 1, trackProgress }
     })
-  }, [standings, leaderScore])
+  }, [standings, leaderScore, maxProgress])
 
-  // When two avatars are within ~1.5% of each other on the track, stagger them
-  // a few units perpendicular to the path so they don't fully overlap.
-  const positionedPlayers = useMemo(() => {
-    // Sort by progress so we can detect adjacent runs of similar values.
+  // Compact-token mode kicks in once the field gets crowded — smaller tokens
+  // give more room for clustered players to fan out without crashing into
+  // each other or the rails.
+  const compactTokens = playersOnTrack.length >= 20
+  const TOKEN_RADIUS = compactTokens ? 11 : 15
+
+  // Cluster handling:
+  //   Up to 4 players sharing ~the same progress fan out perpendicular to
+  //   the path. A cluster of 5+ shows the first 3 plus a "+N more" badge in
+  //   the 4th slot, so every visible avatar stays at least partly readable.
+  // Threshold of 0.015 of TOTAL_LEN (~18 viewBox units along the path) is
+  // tight enough that distinct scores stay separate but tied players still
+  // collapse together.
+  const CLUSTER_THRESHOLD = 0.015
+  const MAX_VISIBLE_PER_CLUSTER = 4
+  const OFFSET_TABLE: Record<number, number[]> = {
+    1: [0],
+    2: [-8, 8],
+    3: [-12, 0, 12],
+    4: [-12, -4, 4, 12],
+  }
+  const { positionedPlayers, clusterOverflows } = useMemo(() => {
     const sorted = [...playersOnTrack].sort((a, b) => a.trackProgress - b.trackProgress)
-    const out = sorted.map((row, i) => {
-      // Offset rotates within a small cluster
-      let cluster = 0
-      for (let j = i - 1; j >= 0; j--) {
-        if (Math.abs(sorted[i].trackProgress - sorted[j].trackProgress) < 0.015) cluster++
-        else break
+    const positioned: Array<typeof sorted[number] & { vOffset: number }> = []
+    const overflows: Array<{ progress: number; vOffset: number; count: number }> = []
+
+    let i = 0
+    while (i < sorted.length) {
+      const cluster = [sorted[i]]
+      while (
+        i + cluster.length < sorted.length &&
+        sorted[i + cluster.length].trackProgress - cluster[cluster.length - 1].trackProgress < CLUSTER_THRESHOLD
+      ) {
+        cluster.push(sorted[i + cluster.length])
       }
-      // Alternate pattern: 0, +12, -12, +24, -24 ...
-      const sign = cluster % 2 === 0 ? 1 : -1
-      const magnitude = Math.ceil(cluster / 2) * 12
-      return { ...row, vOffset: cluster === 0 ? 0 : sign * magnitude }
-    })
-    return out
+
+      if (cluster.length <= MAX_VISIBLE_PER_CLUSTER) {
+        const offsets = OFFSET_TABLE[cluster.length]
+        cluster.forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
+      } else {
+        // Show first 3 in slots 0-2 of the 4-slot table; reuse slot 3 for the badge.
+        const offsets = OFFSET_TABLE[4]
+        cluster.slice(0, 3).forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
+        overflows.push({
+          progress: cluster[0].trackProgress,
+          vOffset: offsets[3],
+          count: cluster.length - 3,
+        })
+      }
+
+      i += cluster.length
+    }
+
+    return { positionedPlayers: positioned, clusterOverflows: overflows }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playersOnTrack])
 
   // Derby finish trigger: when raceProgress crosses 1.0, fire confetti + open winner popup
@@ -257,13 +322,14 @@ export default function TrackPage() {
       return
     }
     if (finishedRef.current) return
-    if (positionedPlayers.length === 0) return
+    if (playersOnTrack.length === 0) return
     finishedRef.current = true
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setConfettiKey(k => k + 1)
-    const winner = [...positionedPlayers].sort((a, b) => b.total - a.total)[0]
+    // playersOnTrack is sorted by total desc (it derives from standings).
+    const winner = playersOnTrack[0]
     setSelectedPlayer(winner.player.id)
-  }, [raceProgress, positionedPlayers])
+  }, [raceProgress, playersOnTrack])
 
   if (loading) {
     return (
@@ -330,16 +396,25 @@ export default function TrackPage() {
             </clipPath>
           </defs>
 
-          {/* Dirt racing surface (outer rail filled) */}
+          {/* Dirt — oval annulus */}
           <path d={OUTER_RAIL_D} fill="url(#dirtSurface)" />
-          {/* Cut out the infield */}
           <path d={INNER_RAIL_D} fill="url(#infieldGrass)" />
+          {/* Dirt — chute (rectangle joining the top of the oval) */}
+          <rect
+            x={CHUTE_X_START}
+            y={OUTER_TOP_Y}
+            width={CHUTE_LEN}
+            height={INNER_TOP_Y - OUTER_TOP_Y}
+            fill="url(#dirtSurface)"
+          />
 
-          {/* White outer + inner rails */}
+          {/* Rails — oval (outer + inner) */}
           <path d={OUTER_RAIL_D} fill="none" stroke="#FFFFFF" strokeWidth="2" />
           <path d={INNER_RAIL_D} fill="none" stroke="#FFFFFF" strokeWidth="2" />
+          {/* Rails — chute (top edge + right cap + bottom edge) */}
+          <path d={CHUTE_OUTLINE_D} fill="none" stroke="#FFFFFF" strokeWidth="2" />
 
-          {/* Dashed center lane line along the path */}
+          {/* Dashed center lane along the racing path */}
           <path
             d={CENTER_LANE_D}
             fill="none"
@@ -349,19 +424,53 @@ export default function TrackPage() {
             strokeDasharray="6 6"
           />
 
-          {/* START line and label (bottom-left of home stretch) */}
-          <line
-            x1={STRAIGHT_X_START + 30}
-            y1={INNER_BOT_Y}
-            x2={STRAIGHT_X_START + 30}
-            y2={OUTER_BOT_Y}
-            stroke="#FFFFFF"
-            strokeWidth="3"
-          />
+          {/* ═══ STARTING GATE — at the far end of the chute ═══ */}
+          {/* Top-down view: the gate spans the chute's perpendicular axis
+              (vertical in our viewBox) and stalls stack top-to-bottom. Horses
+              face LEFT (running direction), so the gold "front bar" is on
+              the left edge — that's the door that flies open at the start. */}
+          {(() => {
+            const gateW = 22
+            const gateGapTop = 4
+            const gateGapBot = 4
+            const gateY = OUTER_TOP_Y + gateGapTop
+            const gateH = (INNER_TOP_Y - OUTER_TOP_Y) - gateGapTop - gateGapBot
+            const gateX = CHUTE_X_END - gateW - 4
+            return (
+              <g>
+                {/* Gate body — dark frame with gold trim */}
+                <rect x={gateX} y={gateY} width={gateW} height={gateH} fill="#1a1a1a" stroke="#C9A84C" strokeWidth="1.4" rx="1.5" />
+                {/* Front bar (gold) — on the LEFT, where horses break out */}
+                <rect x={gateX - 3} y={gateY - 1.5} width="3" height={gateH + 3} fill="#C9A84C" rx="1" />
+                {/* Stall dividers — horizontal lines, splitting the gate into 4 stacked stalls */}
+                {[0.25, 0.5, 0.75].map(t => {
+                  const y = gateY + gateH * t
+                  return <line key={t} x1={gateX + 2} y1={y} x2={gateX + gateW - 2} y2={y} stroke="#FFFFFF" strokeWidth="0.7" opacity="0.85" />
+                })}
+                {/* Stall numbers — one per row, vertically stacked */}
+                {[0.125, 0.375, 0.625, 0.875].map((t, i) => (
+                  <text
+                    key={t}
+                    x={gateX + gateW / 2}
+                    y={gateY + gateH * t + 2}
+                    fontSize="5"
+                    fill="#C9A84C"
+                    textAnchor="middle"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    {i + 1}
+                  </text>
+                ))}
+              </g>
+            )
+          })()}
+
+          {/* "START" label below the gate */}
           <text
-            x={STRAIGHT_X_START + 30}
-            y={OUTER_BOT_Y + 16}
-            fontSize="13"
+            x={CHUTE_X_END - 15}
+            y={INNER_TOP_Y + 14}
+            fontSize="12"
             fill="#FFFFFF"
             fontFamily="serif"
             fontWeight="bold"
@@ -370,18 +479,43 @@ export default function TrackPage() {
             START
           </text>
 
-          {/* FINISH line and label (bottom-right of home stretch) */}
+          {/* ═══ FINISH LINE — at the right end of the homestretch ═══ */}
+          {/* White line across the homestretch */}
           <line
-            x1={STRAIGHT_X_END - 30}
+            x1={STRAIGHT_X_END}
             y1={INNER_BOT_Y}
-            x2={STRAIGHT_X_END - 30}
+            x2={STRAIGHT_X_END}
             y2={OUTER_BOT_Y}
             stroke="#FFFFFF"
             strokeWidth="3"
           />
+          {/* Black checker stripes layered on top */}
+          <line
+            x1={STRAIGHT_X_END}
+            y1={INNER_BOT_Y}
+            x2={STRAIGHT_X_END}
+            y2={OUTER_BOT_Y}
+            stroke="#000000"
+            strokeWidth="3"
+            strokeDasharray="4 4"
+          />
+
+          {/* Finish pole on the inside rail */}
+          <g transform={`translate(${STRAIGHT_X_END}, ${INNER_BOT_Y})`}>
+            {/* Pole — white with red bands (Churchill-style candy stripe) */}
+            <rect x="-1.5" y="-34" width="3" height="34" fill="#FFFFFF" stroke="#000" strokeWidth="0.3" />
+            <rect x="-1.5" y="-32" width="3" height="5" fill="#C41E3A" />
+            <rect x="-1.5" y="-22" width="3" height="5" fill="#C41E3A" />
+            <rect x="-1.5" y="-12" width="3" height="5" fill="#C41E3A" />
+            {/* Pennant flag at the top */}
+            <polygon points="0,-34 12,-31 0,-28" fill="#C9A84C" stroke="#8B1A2F" strokeWidth="0.6" />
+            <circle cx="0" cy="-34" r="1.3" fill="#C9A84C" stroke="#8B1A2F" strokeWidth="0.4" />
+          </g>
+
+          {/* "FINISH" label on dirt below the line */}
           <text
-            x={STRAIGHT_X_END - 30}
-            y={OUTER_BOT_Y + 16}
+            x={STRAIGHT_X_END}
+            y={OUTER_BOT_Y + 14}
             fontSize="13"
             fill="#FFFFFF"
             fontFamily="serif"
@@ -391,30 +525,29 @@ export default function TrackPage() {
             FINISH
           </text>
 
-          {/* Decorative roses sprinkled in the infield */}
-          <text x={STRAIGHT_X_START + 60} y={TRACK_CY - 10} fontSize="20" opacity="0.18">🌹</text>
-          <text x={STRAIGHT_X_END - 70} y={TRACK_CY + 22} fontSize="20" opacity="0.18">🌹</text>
+          {/* Decorative roses in the infield */}
+          <text x={STRAIGHT_X_START + 50} y={TRACK_CY - 10} fontSize="20" opacity="0.18">🌹</text>
+          <text x={STRAIGHT_X_END - 60} y={TRACK_CY + 22} fontSize="20" opacity="0.18">🌹</text>
 
-          {/* "Churchill Downs" — gold italic in infield */}
+          {/* Track name (centered in the oval infield, not the canvas) */}
           <text
-            x={VIEWBOX_W / 2}
+            x={(STRAIGHT_X_START + STRAIGHT_X_END) / 2}
             y={TRACK_CY - 6}
             textAnchor="middle"
             fontFamily="serif"
             fontStyle="italic"
             fontWeight="bold"
-            fontSize="22"
+            fontSize="20"
             fill="#C9A84C"
           >
             {event?.track || 'Churchill Downs'}
           </text>
-          {/* "Louisville, KY" subtitle */}
           <text
-            x={VIEWBOX_W / 2}
-            y={TRACK_CY + 16}
+            x={(STRAIGHT_X_START + STRAIGHT_X_END) / 2}
+            y={TRACK_CY + 14}
             textAnchor="middle"
             fontFamily="serif"
-            fontSize="11"
+            fontSize="10"
             fill="#FFFFFF"
             opacity="0.75"
           >
@@ -431,9 +564,36 @@ export default function TrackPage() {
                 pos={pos}
                 player={row.player}
                 isLeader={isLeader}
-                showName={positionedPlayers.length <= 12}
+                showName={!compactTokens && positionedPlayers.length <= 12}
+                radius={TOKEN_RADIUS}
                 onTap={() => setSelectedPlayer(row.player.id)}
               />
+            )
+          })}
+
+          {/* Cluster overflow badges — "+N more" tokens for clusters of 5+ */}
+          {clusterOverflows.map((o, i) => {
+            const pos = positionAt(o.progress, o.vOffset)
+            const r = TOKEN_RADIUS - 3
+            return (
+              <g
+                key={`overflow-${i}`}
+                transform={`translate(${pos.x}, ${pos.y})`}
+                filter="url(#tokenShadow)"
+              >
+                <circle cx="0" cy="0" r={r} fill="#1a1a1a" stroke="#C9A84C" strokeWidth="1.4" />
+                <text
+                  x="0"
+                  y={r * 0.35}
+                  fontSize={r * 0.85}
+                  fontWeight="bold"
+                  fill="#C9A84C"
+                  textAnchor="middle"
+                  fontFamily="monospace"
+                >
+                  +{o.count}
+                </text>
+              </g>
             )
           })}
         </svg>
@@ -471,12 +631,19 @@ export default function TrackPage() {
         </div>
       </footer>
 
+      {/* Powered by Watch Party */}
+      <div className="flex justify-center mt-8 pb-6 px-4">
+        <WatchPartyBadge />
+      </div>
+
       {/* Player popup */}
       <AnimatePresence>
         {selectedPlayer && (() => {
-          const row = positionedPlayers.find(r => r.player.id === selectedPlayer)
+          // Look up against playersOnTrack so cluster-overflowed players still
+          // open a popup when tapped via the leaderboard.
+          const row = playersOnTrack.find(r => r.player.id === selectedPlayer)
           if (!row) return null
-          const isWinner = raceProgress >= 1 && row === [...positionedPlayers].sort((a, b) => b.total - a.total)[0]
+          const isWinner = raceProgress >= 1 && row.player.id === playersOnTrack[0]?.player.id
           return (
             <motion.div
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -520,15 +687,22 @@ export default function TrackPage() {
 // ─── PlayerToken ────────────────────────────────────────────────────────────
 
 function PlayerToken({
-  pos, player, isLeader, showName, onTap,
+  pos, player, isLeader, showName, radius, onTap,
 }: {
   pos: { x: number; y: number }
   player: Player
   isLeader: boolean
   showName: boolean
+  radius: number
   onTap: () => void
 }) {
   const av = getAvatar(player.avatar)
+  // Inner avatar is sized so it just fits inside the white ring.
+  const innerR = Math.max(8, radius - 2)
+  const inner = innerR * 2
+  // Leader pulse oscillates between r-2 and r+8 for a subtle halo effect.
+  const pulseLow = radius + 3
+  const pulseHigh = radius + 13
   return (
     <motion.g
       initial={false}
@@ -539,26 +713,26 @@ function PlayerToken({
       filter="url(#tokenShadow)"
     >
       {isLeader && (
-        <circle cx="0" cy="0" r="20" fill="none" stroke="#C9A84C" strokeWidth="2.5" opacity="0.9">
-          <animate attributeName="r" values="18;28;18" dur="1.6s" repeatCount="indefinite" />
+        <circle cx="0" cy="0" r={pulseLow + 2} fill="none" stroke="#C9A84C" strokeWidth="2.5" opacity="0.9">
+          <animate attributeName="r" values={`${pulseLow};${pulseHigh};${pulseLow}`} dur="1.6s" repeatCount="indefinite" />
           <animate attributeName="opacity" values="0.9;0.2;0.9" dur="1.6s" repeatCount="indefinite" />
         </circle>
       )}
-      <circle cx="0" cy="0" r="15" fill={isLeader ? '#C9A84C' : '#8B1A2F'} />
+      <circle cx="0" cy="0" r={radius} fill={isLeader ? '#C9A84C' : '#8B1A2F'} />
       <svg
-        x="-13"
-        y="-13"
-        width="26"
-        height="26"
+        x={-innerR}
+        y={-innerR}
+        width={inner}
+        height={inner}
         viewBox="0 0 60 60"
         clipPath="url(#trackTokenClip)"
         dangerouslySetInnerHTML={{ __html: av.svg }}
       />
-      <circle cx="0" cy="0" r="13" fill="none" stroke="#FFFFFF" strokeWidth="1.8" pointerEvents="none" />
+      <circle cx="0" cy="0" r={innerR} fill="none" stroke="#FFFFFF" strokeWidth={radius >= 14 ? 1.8 : 1.4} pointerEvents="none" />
       {showName && (
         <text
           x="0"
-          y="-19"
+          y={-(radius + 4)}
           fontSize="9"
           fill="#FFFFFF"
           textAnchor="middle"
