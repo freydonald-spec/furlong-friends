@@ -1214,10 +1214,23 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
             {race.name}
             {(() => {
               const d = parseLocalIso(race.post_time)
-              return d && (
-                <span className="text-white/50 text-xs font-normal ml-2">
-                  • {d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                </span>
+              if (!d) return null
+              const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+              return (
+                <>
+                  <span className="text-white/50 text-xs font-normal ml-2">
+                    • {d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  </span>
+                  <a
+                    href={`https://entries.horseracingnation.com/entries-results/churchill-downs/${dateStr}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[var(--gold)]/70 hover:text-[var(--gold)] text-xs font-normal ml-2 underline-offset-2 hover:underline"
+                  >
+                    📊 Results
+                  </a>
+                </>
               )
             })()}
           </h3>
