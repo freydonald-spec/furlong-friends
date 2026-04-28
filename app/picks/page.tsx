@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon, AVATARS } from '@/lib/avatars'
+import { parseLocalIso } from '@/lib/time'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 type PickDraft = {
@@ -124,9 +125,9 @@ export default function PicksPage() {
     }
   }
 
-  // Tick clock every 30s for race lock countdown
+  // Tick clock every second so the per-race countdown stays smooth.
   useEffect(() => {
-    const i = setInterval(() => setNow(Date.now()), 30_000)
+    const i = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(i)
   }, [])
 
@@ -260,15 +261,17 @@ export default function PicksPage() {
     return idx === -1 ? standings.length : idx + 1
   }, [standings, player])
 
-  // Locking alert
+  // Locking alert: races within 5 minutes of post time that the player hasn't
+  // picked yet. Banner switches into urgent (red, pulsing) under 1 minute.
   const lockingSoon = useMemo(() => {
     if (!races.length || !player) return [] as Race[]
     return races
       .filter(r => {
         if (r.status !== 'open' && r.status !== 'upcoming') return false
-        if (!r.post_time) return false
-        const minutesUntil = (new Date(r.post_time).getTime() - now) / 60_000
-        if (minutesUntil > 30 || minutesUntil < 0) return false
+        const target = parseLocalIso(r.post_time)
+        if (!target) return false
+        const secondsUntil = (target.getTime() - now) / 1000
+        if (secondsUntil > 300 || secondsUntil < 0) return false
         const hasPick = picks.some(p => p.race_id === r.id && (p.win_horse_id || p.place_horse_id || p.show_horse_id))
         return !hasPick && !dismissedAlerts.has(r.id)
       })
@@ -316,21 +319,25 @@ export default function PicksPage() {
           </motion.div>
         )}
         {lockingSoon.map(race => {
-          const minsLeft = Math.max(0, Math.round((new Date(race.post_time!).getTime() - now) / 60_000))
+          const target = parseLocalIso(race.post_time)
+          const secsLeft = target ? Math.max(0, Math.round((target.getTime() - now) / 1000)) : 0
+          const m = Math.floor(secsLeft / 60)
+          const s = secsLeft % 60
+          const urgent = secsLeft < 60
           return (
             <motion.div
               key={race.id}
               initial={{ y: -100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -100, opacity: 0 }}
-              className="sticky top-0 z-20 bg-amber-400/95 text-amber-950 px-4 py-3 flex items-center justify-between shadow-lg"
+              className={`sticky top-0 z-20 px-4 py-3 flex items-center justify-between shadow-lg ${urgent ? 'bg-red-600/95 text-white animate-pulse' : 'bg-amber-400/95 text-amber-950'}`}
             >
               <span className="font-semibold text-sm">
-                ⚠️ Race {race.race_number} locks in {minsLeft} minute{minsLeft === 1 ? '' : 's'} — pick now!
+                ⚠️ Race {race.race_number} locks in {m}:{String(s).padStart(2, '0')} — make your picks!
               </span>
               <button
                 onClick={() => setDismissedAlerts(prev => new Set([...prev, race.id]))}
-                className="text-amber-950/70 ml-3 px-2 font-bold"
+                className={`ml-3 px-2 font-bold ${urgent ? 'text-white/85' : 'text-amber-950/70'}`}
               >✕</button>
             </motion.div>
           )
@@ -447,6 +454,7 @@ export default function PicksPage() {
                     player.multiplier_2x_race_id === race.id ? '2x' : null
                   }
                   multiplierVisible={event.multiplier_visible}
+                  now={now}
                   onPick={() => setOpenModalRaceId(race.id)}
                 />
               ))}
@@ -625,7 +633,7 @@ function TokenCard({
 
 // ----- RACE CARD -----
 function RaceCard({
-  race, horses, pick, score, scoreRevealed, multiplier, multiplierVisible, onPick,
+  race, horses, pick, score, scoreRevealed, multiplier, multiplierVisible, now, onPick,
 }: {
   race: Race
   horses: Horse[]
@@ -634,6 +642,7 @@ function RaceCard({
   scoreRevealed: boolean
   multiplier: '2x' | '3x' | null
   multiplierVisible: boolean
+  now: number
   onPick: () => void
 }) {
   const horseById = (id: string | null) => horses.find(h => h.id === id) ?? null
@@ -661,6 +670,29 @@ function RaceCard({
       case 'locked':   return { label: '🔒 Locked', cls: 'bg-amber-600/30 text-amber-200' }
       case 'finished': return { label: '🏁 Finished', cls: 'bg-[var(--rose-dark)]/40 text-white' }
     }
+  })()
+
+  // Live countdown for races still accepting picks. Hides once locked/finished.
+  // Format: M:SS under one hour, H:MM:SS at one hour or more.
+  const postTimeLocal = parseLocalIso(race.post_time)
+  const countdown = (() => {
+    if (race.status === 'locked' || race.status === 'finished') return null
+    if (!postTimeLocal) return null
+    const ms = postTimeLocal.getTime() - now
+    const secondsLeft = Math.floor(ms / 1000)
+    if (secondsLeft < 0) {
+      return { text: 'Post Time', secondsLeft: -1, cls: 'bg-red-600/30 text-red-200 border-red-500/50' }
+    }
+    const h = Math.floor(secondsLeft / 3600)
+    const m = Math.floor((secondsLeft % 3600) / 60)
+    const s = secondsLeft % 60
+    const formatted = h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+      : `${m}:${String(s).padStart(2, '0')}`
+    const text = `Locks in ${formatted}`
+    if (secondsLeft < 60) return { text, secondsLeft, cls: 'bg-red-600/30 text-red-200 border-red-500/60 animate-pulse' }
+    if (secondsLeft < 300) return { text, secondsLeft, cls: 'bg-amber-500/20 text-amber-200 border-amber-400/50' }
+    return { text, secondsLeft, cls: 'bg-white/10 text-white/75 border-white/20' }
   })()
 
   const canPick = race.status === 'open' || race.status === 'upcoming'
@@ -710,9 +742,16 @@ function RaceCard({
           <h4 className="font-serif text-lg font-bold text-white mt-0.5 truncate">
             {race.name || `Race ${race.race_number}`}
           </h4>
-          <div className="text-white/50 text-xs mt-0.5">
-            {race.distance && `${race.distance} • `}
-            {race.post_time && new Date(race.post_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          <div className="text-white/50 text-xs mt-0.5 flex items-center gap-2 flex-wrap">
+            {race.distance && <span>{race.distance}</span>}
+            {postTimeLocal && (
+              <span>{postTimeLocal.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+            )}
+            {countdown && (
+              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${countdown.cls}`}>
+                {countdown.text}
+              </span>
+            )}
           </div>
         </div>
         <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${statusBadge.cls}`}>

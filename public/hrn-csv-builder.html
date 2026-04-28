@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watch Party — Race Card Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --rose:    #8B1A1A;
+    --rose-lt: #A52020;
+    --gold:    #C9A84C;
+    --gold-lt: #E2C06A;
+    --cream:   #F5EDD8;
+    --dark:    #0E0B07;
+    --dark2:   #1A1510;
+    --dark3:   #241E16;
+    --mid:     #3A3028;
+    --muted:   #8A7A6A;
+    --white:   #FFFFFF;
+    --green:   #2E7D32;
+    --red:     #C62828;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--dark);
+    color: var(--cream);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse at 20% 0%, rgba(139,26,26,0.15) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 100%, rgba(201,168,76,0.08) 0%, transparent 60%);
+  }
+
+  /* ── Header ── */
+  header {
+    border-bottom: 1px solid rgba(201,168,76,0.2);
+    padding: 24px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(14,11,7,0.8);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .logo-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--rose);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    border: 1px solid rgba(201,168,76,0.3);
+  }
+
+  .logo-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--white);
+  }
+
+  .logo-text span { color: var(--gold); }
+
+  .badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--gold);
+    border: 1px solid rgba(201,168,76,0.3);
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* ── Main layout ── */
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  .hero {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(32px, 5vw, 52px);
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+
+  .hero h1 em {
+    font-style: italic;
+    color: var(--gold);
+  }
+
+  .hero p {
+    color: var(--muted);
+    font-size: 16px;
+    max-width: 560px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* ── Steps ── */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+
+  .step {
+    background: var(--dark2);
+    border: 1px solid rgba(201,168,76,0.15);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .step-num {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    background: var(--rose);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--white);
+    border: 1px solid rgba(201,168,76,0.3);
+  }
+
+  .step-text strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 4px;
+  }
+
+  .step-text span {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .step-text a {
+    color: var(--gold);
+    text-decoration: none;
+  }
+
+  .step-text a:hover { text-decoration: underline; }
+
+  /* ── Card ── */
+  .card {
+    background: var(--dark2);
+    border: 1px solid rgba(201,168,76,0.15);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 24px;
+  }
+
+  .card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--white);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .card-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(201,168,76,0.2);
+  }
+
+  /* ── Form elements ── */
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family: 'DM Mono', monospace;
+  }
+
+  input, select {
+    background: var(--dark3);
+    border: 1px solid rgba(201,168,76,0.2);
+    border-radius: 8px;
+    color: var(--cream);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input:focus, select:focus {
+    border-color: var(--gold);
+  }
+
+  input::placeholder { color: var(--muted); }
+
+  select option { background: var(--dark3); }
+
+  textarea {
+    width: 100%;
+    background: var(--dark3);
+    border: 1px solid rgba(201,168,76,0.2);
+    border-radius: 10px;
+    color: var(--cream);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 16px;
+    outline: none;
+    resize: vertical;
+    transition: border-color 0.2s;
+    min-height: 280px;
+  }
+
+  textarea:focus { border-color: var(--gold); }
+  textarea::placeholder { color: var(--muted); }
+
+  /* ── Buttons ── */
+  .btn-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-primary {
+    background: var(--rose);
+    color: var(--white);
+    border: 1px solid rgba(201,168,76,0.4);
+  }
+
+  .btn-primary:hover { background: var(--rose-lt); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-gold {
+    background: var(--gold);
+    color: var(--dark);
+    font-weight: 700;
+  }
+
+  .btn-gold:hover { background: var(--gold-lt); transform: translateY(-1px); }
+  .btn-gold:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .btn-ghost:hover { border-color: var(--muted); color: var(--cream); }
+
+  /* ── Preview ── */
+  #preview-section { display: none; }
+
+  .preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: gap;
+    gap: 12px;
+  }
+
+  .preview-stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-val {
+    font-family: 'Playfair Display', serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .race-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .race-row {
+    background: var(--dark3);
+    border: 1px solid rgba(201,168,76,0.1);
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: border-color 0.2s;
+  }
+
+  .race-row:hover { border-color: rgba(201,168,76,0.3); }
+
+  .race-row.featured {
+    border-color: rgba(201,168,76,0.5);
+    background: rgba(201,168,76,0.05);
+  }
+
+  .race-num {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    background: var(--rose);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--white);
+  }
+
+  .race-info { flex: 1; min-width: 0; }
+
+  .race-name-display {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--white);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .race-meta {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    margin-top: 2px;
+  }
+
+  .race-pills {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .pill-horses {
+    background: rgba(255,255,255,0.08);
+    color: var(--cream);
+  }
+
+  .pill-purse {
+    background: rgba(201,168,76,0.15);
+    color: var(--gold);
+  }
+
+  .pill-featured {
+    background: var(--gold);
+    color: var(--dark);
+    font-weight: 700;
+  }
+
+  .pill-time {
+    background: rgba(139,26,26,0.3);
+    color: #FF8A80;
+  }
+
+  /* ── Errors ── */
+  .error-box {
+    background: rgba(198,40,40,0.15);
+    border: 1px solid rgba(198,40,40,0.4);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: #FF8A80;
+    display: none;
+  }
+
+  .error-box ul { padding-left: 18px; margin-top: 6px; }
+  .error-box li { margin-bottom: 4px; }
+
+  /* ── Success ── */
+  .success-box {
+    background: rgba(46,125,50,0.15);
+    border: 1px solid rgba(46,125,50,0.4);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: #A5D6A7;
+    display: none;
+  }
+
+  /* ── CSV Output ── */
+  .csv-output {
+    background: var(--dark);
+    border: 1px solid rgba(201,168,76,0.2);
+    border-radius: 10px;
+    padding: 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--cream);
+    line-height: 1.7;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre;
+    display: none;
+    margin-top: 16px;
+  }
+
+  .divider {
+    height: 1px;
+    background: rgba(201,168,76,0.15);
+    margin: 28px 0;
+  }
+
+  /* ── Instructions ── */
+  .instructions {
+    background: rgba(201,168,76,0.05);
+    border: 1px solid rgba(201,168,76,0.2);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .instructions strong { color: var(--gold); }
+  .instructions code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--cream);
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--dark2); }
+  ::-webkit-scrollbar-thumb { background: var(--mid); border-radius: 3px; }
+
+  @media (max-width: 700px) {
+    .steps { grid-template-columns: 1fr; }
+    .field-row { grid-template-columns: 1fr 1fr; }
+    header { padding: 16px 20px; }
+    main { padding: 24px 16px 60px; }
+    .card { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🏇</div>
+    <div class="logo-text">Watch <span>Party</span></div>
+  </div>
+  <div class="badge">Race Card Builder</div>
+</header>
+
+<main>
+  <div class="hero">
+    <h1>Build a Race Card<br><em>from HRN entries</em></h1>
+    <p>Paste entries from Horse Racing Nation, configure your event, and download a ready-to-upload CSV in seconds.</p>
+  </div>
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <strong>Visit HRN Entries</strong>
+        <span>Go to <a href="https://entries.horseracingnation.com/entries-results/churchill-downs/" target="_blank">entries.horseracingnation.com</a>, select your track and date.</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <strong>Copy the page text</strong>
+        <span>Select all (Ctrl+A), copy (Ctrl+C), then paste it into the box below.</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <strong>Download & Upload</strong>
+        <span>Generate your CSV, download it, then import it in the Watch Party admin console.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config Card -->
+  <div class="card">
+    <div class="card-title">Event Configuration</div>
+    <div class="field-row">
+      <div class="field">
+        <label>Event Name</label>
+        <input type="text" id="event-name" placeholder="e.g. Thurby 2026" />
+      </div>
+      <div class="field">
+        <label>Race Date</label>
+        <input type="date" id="race-date" />
+      </div>
+      <div class="field">
+        <label>Track</label>
+        <input type="text" id="track" value="Churchill Downs" />
+      </div>
+    </div>
+    <div class="field-row" style="grid-template-columns: 1fr 1fr;">
+      <div class="field">
+        <label>Featured Multiplier</label>
+        <select id="featured-multiplier">
+          <option value="2">2x — Standard Featured</option>
+          <option value="3">3x — Special Featured</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Featured Race Selection</label>
+        <select id="featured-mode">
+          <option value="purse">Auto — Highest Purse</option>
+          <option value="manual">Manual — I'll pick below</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Paste Card -->
+  <div class="card">
+    <div class="card-title">Paste HRN Entries</div>
+
+    <div class="instructions">
+      <strong>How to get the best results:</strong> On the HRN entries page, scroll past the navigation and select from the first race header down to the last horse in the final race. The parser looks for patterns like <code>Churchill Downs Race # 1</code>, horse numbers, odds like <code>8/1</code> or <code>8-1</code>, and post times like <code>12:45 PM</code>. The more complete the paste, the better the result.
+    </div>
+
+    <textarea id="paste-input" placeholder="Paste HRN entries text here...
+
+Example of what to paste:
+Churchill Downs Race # 1, 12:45 PM
+6F, Dirt, $50,000 Claiming
+Purse: $78,000
+
+#  PP  Horse
+1  1   Banned for Life   Luis Saez   8/5
+2  2   Optical           James Graham  6/1
+..."></textarea>
+
+    <div class="error-box" id="error-box"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="parseEntries()">⚙️ Parse Entries</button>
+      <button class="btn btn-ghost" onclick="clearAll()">✕ Clear</button>
+      <button class="btn btn-ghost" onclick="loadSample()">📋 Load Sample</button>
+    </div>
+  </div>
+
+  <!-- Preview Section -->
+  <div id="preview-section">
+    <div class="card">
+      <div class="card-title">Preview</div>
+
+      <div class="preview-header">
+        <div class="preview-stats">
+          <div class="stat">
+            <div class="stat-val" id="stat-races">0</div>
+            <div class="stat-label">Races</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="stat-horses">0</div>
+            <div class="stat-label">Horses</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="stat-featured">—</div>
+            <div class="stat-label">Featured Race</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual featured picker -->
+      <div id="manual-featured-row" style="display:none; margin-bottom: 16px;">
+        <div class="field" style="max-width: 300px;">
+          <label>Select Featured Race</label>
+          <select id="manual-featured-select" onchange="updateFeatured()">
+          </select>
+        </div>
+      </div>
+
+      <div class="race-grid" id="race-grid"></div>
+
+      <div class="divider"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-gold" onclick="downloadCSV()">⬇ Download CSV</button>
+        <button class="btn btn-ghost" onclick="toggleCSV()">{ } View Raw CSV</button>
+      </div>
+
+      <div class="csv-output" id="csv-output"></div>
+      <div class="success-box" id="success-box">✓ CSV downloaded! Go to your Watch Party admin console → Races tab → Import CSV.</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── State ──────────────────────────────────────────────
+let parsedRaces = [];
+let featuredRaceNum = null;
+
+// ── Sample data ────────────────────────────────────────
+function loadSample() {
+  document.getElementById('paste-input').value = `Churchill Downs Race # 1, 12:45 PM
+6 f, Dirt, $50,000 Claiming
+Open | 3 Year Olds And Up
+Purse: $78,000
+Daily Double / Exacta / Trifecta / Superfecta / Pick 3 (Races 1-2-3)
+
+Picks Report HRN Power Pick selection. (races 1-3 provided free)
+Race 1: Get Churchill Downs Picks for all of today's races.
+
+#\tPP\tHorse (last) / Sire\tTrainer / Jockey\t\tML
+1\t1\t
+Banned for Life (114)
+Maximus Mischief
+
+Albert M. Stall, Jr.
+
+Luis Saez
+
+8/5
+
+2\t2\t
+Optical (96)
+City of Light
+
+J. Keith Desormeaux
+
+James Graham
+
+6/1
+
+3\t3\t
+Surf City (74)
+Mendelssohn
+
+Victoria H. Oliver
+
+Junior Alvarado
+
+12/1
+
+Churchill Downs Race # 2, 1:15 PM
+6 f, Dirt, Allowance
+Fillies & Mares | 3 Year Olds And Up
+Purse: $127,000
+Daily Double / Exacta / Trifecta
+
+#\tPP\tHorse (last) / Sire\tTrainer / Jockey\t\tML
+1\t1\t
+Delightful Claire (114)
+Thousand Words
+
+Philip A. Bauer
+
+Tyler Gaffalione
+
+6/5
+
+2\t2\t
+Chatter (102)
+Vekoma
+
+Saffie A. Joseph, Jr.
+
+Irad Ortiz, Jr.
+
+5/2
+
+3\t3\t
+Shared Vision (99)
+McKinzie
+
+George R. Arnold II
+
+Edgar Morales
+
+3/1`;
+
+  document.getElementById('event-name').value = 'Thurby 2026';
+  document.getElementById('race-date').value = '2026-04-30';
+}
+
+// ── NOISE lines to skip entirely ───────────────────────
+const NOISE = [
+  /^daily double/i,
+  /^exacta\s*\//i,
+  /^picks report/i,
+  /^race \d+:/i,
+  /^get churchill/i,
+  /^get keeneland/i,
+  /^get .+ picks/i,
+  /^top kentucky derby/i,
+  /^five.star horses/i,
+  /^the kentucky derby is/i,
+  /^reserve preakness/i,
+  /^get a head start/i,
+  /^get the triple crown/i,
+  /^\(also.eligible\)/i,
+  /^in a 20.horse field/i,
+  /^add to cart/i,
+  /^there's potential/i,
+  /^super hi.5/i,
+  /^matchup/i,
+];
+
+function isNoise(line) {
+  return NOISE.some(re => re.test(line));
+}
+
+// ── Extract race name from the distance/surface line ───
+// e.g. "6F, Dirt, $50,000 Claiming" → "$50,000 Claiming"
+// e.g. "1M, Turf, Opening Verse S." → "Opening Verse S."
+// e.g. "5F, Turf, Kentucky Juvenile S. presented by Resolute Racing" → "Kentucky Juvenile S."
+function extractRaceName(line) {
+  // Remove distance prefix: "6F, " or "1 1/16M, " or "4 1/2F, " or "1 m, " etc.
+  let s = line.replace(/^\d+(?:\s+\d+\/\d+)?\s*(?:f|m|furlongs?|miles?)\s*,?\s*/i, '').trim();
+  // Remove surface: "Dirt, " or "Turf, " or "Dirt " at start
+  s = s.replace(/^(?:dirt|turf|all weather|synthetic|inner dirt)\s*,?\s*/i, '').trim();
+  // Remove "presented by ..." suffix
+  s = s.replace(/\s+presented by\s+.*/i, '').trim();
+  // Remove trailing comma
+  s = s.replace(/,\s*$/, '').trim();
+  return s.length > 2 ? s : '';
+}
+
+// ── Parser ─────────────────────────────────────────────
+function parseEntries() {
+  const text = document.getElementById('paste-input').value.trim();
+  const dateVal = document.getElementById('race-date').value;
+  const errors = [];
+
+  if (!text) { showError(['Please paste HRN entries text first.']); return; }
+  if (!dateVal) { showError(['Please select a race date.']); return; }
+
+  const [yr, mo, dy] = dateVal.split('-');
+  const dateStr = `${mo}/${dy}/${yr}`;
+
+  const races = [];
+
+  // Split into raw lines, keep blanks for horse parsing
+  const rawLines = text.split('\n');
+  // Cleaned lines for race header / meta detection (trimmed, no blanks)
+  const lines = rawLines.map(l => l.trim());
+
+  const raceHeaderRe = /race\s*#\s*(\d+)\s*,\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i;
+  const purseRe = /^purse\s*:\s*\$?([\d,]+)/i;
+  const oddsOnlyRe = /^(\d+\/\d+)$/; // standalone odds line e.g. "8/5"
+  // Horse number line: starts with "N\tN\t" or "N\tN\t<name>"
+  const horseNumLineRe = /^(\d+)\t(\d+)\t?(.*)?$/;
+  // Sire line — usually one or two capitalized words, possibly with (GB)/(IRE)/(JPN)/(BRZ)/(FR)
+  const sireRe = /^[A-Z][a-zA-Z'\s]+(?: \([A-Z]{2,3}\))?$/;
+  // Distance/surface line
+  const distSurfaceRe = /^\d+(?:\s+\d+\/\d+)?\s*(?:f|m|furlongs?|miles?)\s*,\s*(?:dirt|turf|all weather|synthetic)/i;
+
+  let currentRace = null;
+  // State machine for horse parsing
+  let expectingHorseName = false;
+  let pendingHorseNum = null;
+  let pendingHorseName = null;
+  // Track lines after horse number line
+  let postNumLineCount = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) {
+      // blank line — reset horse name expectation only if we've gone too far
+      if (expectingHorseName && postNumLineCount > 3) {
+        expectingHorseName = false;
+        pendingHorseNum = null;
+        pendingHorseName = null;
+      }
+      if (expectingHorseName) postNumLineCount++;
+      continue;
+    }
+
+    // Skip noise lines
+    if (isNoise(line)) continue;
+
+    // ── Race header ──────────────────────────────────
+    const raceMatch = line.match(raceHeaderRe);
+    if (raceMatch) {
+      if (currentRace && currentRace.horses.length > 0) races.push(currentRace);
+      currentRace = {
+        number: parseInt(raceMatch[1]),
+        postTime: `${dateStr} ${raceMatch[2].trim().toUpperCase()}`,
+        name: '',
+        purse: 0,
+        horses: []
+      };
+      expectingHorseName = false;
+      pendingHorseNum = null;
+      pendingHorseName = null;
+      continue;
+    }
+
+    if (!currentRace) continue;
+
+    // ── Purse ────────────────────────────────────────
+    const purseMatch = line.match(purseRe);
+    if (purseMatch) {
+      currentRace.purse = parseInt(purseMatch[1].replace(/,/g, ''));
+      continue;
+    }
+
+    // ── Distance/surface line → extract race name ────
+    if (!currentRace.name && distSurfaceRe.test(line)) {
+      const name = extractRaceName(line);
+      if (name) currentRace.name = name;
+      continue;
+    }
+
+    // ── Skip eligibility / age / sex lines ──────────
+    if (/fillies|mares|geldings|colts|open|year olds/i.test(line) && line.includes('|')) continue;
+    if (/^#\s+PP\s+Horse/i.test(line)) continue; // table header
+
+    // ── Standalone odds line ─────────────────────────
+    const oddsMatch = line.match(oddsOnlyRe);
+    if (oddsMatch && pendingHorseName && pendingHorseNum !== null) {
+      const odds = oddsMatch[1].replace('/', '-');
+      const exists = currentRace.horses.find(h => h.number === pendingHorseNum);
+      if (!exists) {
+        currentRace.horses.push({
+          number: pendingHorseNum,
+          name: pendingHorseName,
+          odds
+        });
+      }
+      expectingHorseName = false;
+      pendingHorseNum = null;
+      pendingHorseName = null;
+      postNumLineCount = 0;
+      continue;
+    }
+
+    // ── Horse number line: "N\tN\t..." ───────────────
+    const horseNumMatch = line.match(horseNumLineRe);
+    if (horseNumMatch) {
+      const num = parseInt(horseNumMatch[1]);
+      if (num >= 1 && num <= 30) {
+        // Save any pending horse (shouldn't happen but safety net)
+        pendingHorseNum = num;
+        pendingHorseName = null;
+        expectingHorseName = true;
+        postNumLineCount = 0;
+
+        // If horse name is on the same line after the two numbers
+        const inline = (horseNumMatch[3] || '').trim();
+        if (inline.length > 1) {
+          // Remove speed figure in parens: "Banned for Life (114)" → "Banned for Life"
+          pendingHorseName = inline.replace(/\s*\(\d+\)\s*$/, '').trim();
+        }
+        continue;
+      }
+    }
+
+    // ── Horse name line (line after horse number line) ─
+    if (expectingHorseName && pendingHorseName === null && line.length > 1) {
+      // Make sure it's not a sire, trainer, jockey or noise
+      if (!isNoise(line) && !purseRe.test(line) && !raceHeaderRe.test(line)) {
+        // Horse name: remove speed figure
+        pendingHorseName = line.replace(/\s*\(\d+\)\s*$/, '').trim();
+        postNumLineCount = 0;
+      }
+      continue;
+    }
+
+    // After we have a name, subsequent lines are sire/trainer/jockey — skip until odds
+    if (expectingHorseName && pendingHorseName !== null) {
+      postNumLineCount++;
+      // If this line looks like odds, handle it
+      if (oddsOnlyRe.test(line)) {
+        const odds = line.replace('/', '-');
+        const exists = currentRace.horses.find(h => h.number === pendingHorseNum);
+        if (!exists) {
+          currentRace.horses.push({ number: pendingHorseNum, name: pendingHorseName, odds });
+        }
+        expectingHorseName = false;
+        pendingHorseNum = null;
+        pendingHorseName = null;
+        postNumLineCount = 0;
+      }
+    }
+  }
+
+  // Push last race
+  if (currentRace && currentRace.horses.length > 0) races.push(currentRace);
+
+  if (races.length === 0) {
+    showError([
+      'No races found. Make sure you pasted the full HRN entries text.',
+      'Race headers should include: "Churchill Downs Race # 1, 12:45 PM"',
+      'Try the Load Sample button to see the expected format.'
+    ]);
+    return;
+  }
+
+  // Fill missing race names
+  races.forEach(r => {
+    if (!r.name) r.name = `Race ${r.number}`;
+  });
+
+  // Warn on thin fields
+  races.forEach(r => {
+    if (r.horses.length < 2) {
+      errors.push(`Race ${r.number} (${r.name}) only found ${r.horses.length} horse — check that race.`);
+    }
+  });
+
+  parsedRaces = races;
+  autoSelectFeatured();
+  renderPreview();
+  hideError();
+  if (errors.length > 0) showError(errors, 'warning');
+}
+
+function autoSelectFeatured() {
+  const mode = document.getElementById('featured-mode').value;
+  if (mode === 'purse') {
+    let maxPurse = 0;
+    let featuredIdx = 0;
+    parsedRaces.forEach((r, i) => {
+      if (r.purse > maxPurse) { maxPurse = r.purse; featuredIdx = i; }
+    });
+    featuredRaceNum = parsedRaces[featuredIdx]?.number ?? null;
+  }
+}
+
+function updateFeatured() {
+  featuredRaceNum = parseInt(document.getElementById('manual-featured-select').value);
+  renderRaceGrid();
+  updateStats();
+}
+
+// ── Render ─────────────────────────────────────────────
+function renderPreview() {
+  document.getElementById('preview-section').style.display = 'block';
+  document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const mode = document.getElementById('featured-mode').value;
+  const manualRow = document.getElementById('manual-featured-row');
+
+  if (mode === 'manual') {
+    manualRow.style.display = 'block';
+    const sel = document.getElementById('manual-featured-select');
+    sel.innerHTML = parsedRaces.map(r =>
+      `<option value="${r.number}">Race ${r.number} — ${r.name}</option>`
+    ).join('');
+    featuredRaceNum = parsedRaces[0]?.number ?? null;
+  } else {
+    manualRow.style.display = 'none';
+  }
+
+  renderRaceGrid();
+  updateStats();
+}
+
+function renderRaceGrid() {
+  const grid = document.getElementById('race-grid');
+  grid.innerHTML = parsedRaces.map(r => {
+    const isFeatured = r.number === featuredRaceNum;
+    const purseStr = r.purse > 0 ? `$${r.purse.toLocaleString()}` : null;
+    const mult = document.getElementById('featured-multiplier').value;
+
+    return `
+      <div class="race-row ${isFeatured ? 'featured' : ''}">
+        <div class="race-num">${r.number}</div>
+        <div class="race-info">
+          <div class="race-name-display">${r.name}${isFeatured ? ' ⭐' : ''}</div>
+          <div class="race-meta">${r.postTime} · ${r.horses.length} horses</div>
+        </div>
+        <div class="race-pills">
+          ${r.horses.length > 0 ? `<span class="pill pill-horses">${r.horses.length} horses</span>` : ''}
+          ${purseStr ? `<span class="pill pill-purse">${purseStr}</span>` : ''}
+          ${isFeatured ? `<span class="pill pill-featured">⭐ ${mult}x FEATURED</span>` : ''}
+          <span class="pill pill-time">${r.postTime.split(' ').slice(1).join(' ')}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function updateStats() {
+  const totalHorses = parsedRaces.reduce((s, r) => s + r.horses.length, 0);
+  const featured = parsedRaces.find(r => r.number === featuredRaceNum);
+
+  document.getElementById('stat-races').textContent = parsedRaces.length;
+  document.getElementById('stat-horses').textContent = totalHorses;
+  document.getElementById('stat-featured').textContent = featured
+    ? `Race ${featured.number}`
+    : '—';
+}
+
+// ── CSV Generation ─────────────────────────────────────
+function buildCSV() {
+  const mult = document.getElementById('featured-multiplier').value;
+  const rows = ['race_number,number,name,odds,post_time,race_name,is_featured,featured_multiplier,purse'];
+
+  parsedRaces.forEach(r => {
+    const isFeatured = r.number === featuredRaceNum;
+    r.horses.forEach(h => {
+      const cols = [
+        r.number,
+        h.number,
+        `"${h.name.replace(/"/g, '""')}"`,
+        h.odds,
+        r.postTime,
+        `"${r.name.replace(/"/g, '""')}"`,
+        isFeatured ? 'true' : 'false',
+        isFeatured ? mult : '1',
+        r.purse || 0
+      ];
+      rows.push(cols.join(','));
+    });
+  });
+
+  return rows.join('\n');
+}
+
+function downloadCSV() {
+  const csv = buildCSV();
+  const eventName = document.getElementById('event-name').value || 'race-card';
+  const dateVal = document.getElementById('race-date').value || 'date';
+  const filename = `${eventName.toLowerCase().replace(/\s+/g, '-')}-${dateVal}.csv`;
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  const sb = document.getElementById('success-box');
+  sb.style.display = 'block';
+  setTimeout(() => sb.style.display = 'none', 5000);
+}
+
+function toggleCSV() {
+  const el = document.getElementById('csv-output');
+  if (el.style.display === 'none' || !el.style.display) {
+    el.textContent = buildCSV();
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── Utilities ──────────────────────────────────────────
+function showError(msgs, type = 'error') {
+  const box = document.getElementById('error-box');
+  box.style.display = 'block';
+  box.style.background = type === 'warning'
+    ? 'rgba(255,152,0,0.1)' : 'rgba(198,40,40,0.15)';
+  box.style.borderColor = type === 'warning'
+    ? 'rgba(255,152,0,0.4)' : 'rgba(198,40,40,0.4)';
+  box.style.color = type === 'warning' ? '#FFB74D' : '#FF8A80';
+  box.innerHTML = msgs.length === 1
+    ? msgs[0]
+    : `<ul>${msgs.map(m => `<li>${m}</li>`).join('')}</ul>`;
+}
+
+function hideError() {
+  document.getElementById('error-box').style.display = 'none';
+}
+
+function clearAll() {
+  document.getElementById('paste-input').value = '';
+  document.getElementById('preview-section').style.display = 'none';
+  document.getElementById('csv-output').style.display = 'none';
+  document.getElementById('success-box').style.display = 'none';
+  hideError();
+  parsedRaces = [];
+  featuredRaceNum = null;
+}
+
+// Update featured when mode changes
+document.getElementById('featured-mode').addEventListener('change', () => {
+  if (parsedRaces.length > 0) {
+    autoSelectFeatured();
+    renderPreview();
+  }
+});
+
+document.getElementById('featured-multiplier').addEventListener('change', () => {
+  if (parsedRaces.length > 0) renderRaceGrid();
+});
+
+// Set today's date as default
+document.getElementById('race-date').valueAsDate = new Date();
+</script>
+</body>
+</html>
