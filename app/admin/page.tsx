@@ -1216,25 +1216,33 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
             {(() => {
               const d = parseLocalIso(race.post_time)
               if (!d) return null
-              const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
               return (
-                <>
-                  <span className="text-white/50 text-xs font-normal ml-2">
-                    • {d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                  </span>
-                  <a
-                    href={`https://entries.horseracingnation.com/entries-results/churchill-downs/${dateStr}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-[var(--gold)]/70 hover:text-[var(--gold)] text-xs font-normal ml-2 underline-offset-2 hover:underline"
-                  >
-                    📊 Results
-                  </a>
-                </>
+                <span className="text-white/50 text-xs font-normal ml-2">
+                  • {d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </span>
               )
             })()}
           </h3>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {(() => {
+              const d = parseLocalIso(race.post_time)
+              const dateStr = d
+                ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                : null
+              if (!dateStr) return null
+              return (
+                <a
+                  href={`https://entries.horseracingnation.com/entries-results/churchill-downs/${dateStr}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[var(--gold)]/70 hover:text-[var(--gold)] text-xs font-normal underline-offset-2 hover:underline"
+                >
+                  📊 Results ↗
+                </a>
+              )
+            })()}
+          </div>
           <div className="text-white/50 text-xs mt-0.5">
             🐴 {horses.length} horses • 📋 {playersWithPick}/{players.length} picked
           </div>
@@ -1626,7 +1634,18 @@ function ResultsCard({
             RACE {race.race_number} {race.is_featured && <span className="text-[var(--gold)]">⭐ DERBY</span>}
           </div>
           <h3 className="text-white font-serif text-lg font-bold truncate">{race.name}</h3>
-          <div className="text-white/50 text-xs">
+          <div className="mt-0.5">
+            <a
+              href={`https://www.twinspires.com/bet/program/classic/churchill-downs/cd/Thoroughbred/${race.race_number}/payouts`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-[var(--gold)]/70 hover:text-[var(--gold)] text-xs font-normal underline-offset-2 hover:underline"
+            >
+              📊 Results ↗
+            </a>
+          </div>
+          <div className="text-white/50 text-xs mt-0.5">
             {totalPicked} {calculated ? 'picks scored' : 'picks'}
             {' • '}
             status: <span className="font-bold">{race.status}</span>

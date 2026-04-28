@@ -252,19 +252,24 @@ export default function TrackPage() {
   const leaderScore = standings[0]?.total ?? 0
 
   // The track is divided into N segments where N = total races. The leader's
-  // maximum reachable position grows by 1/N each time a race locks or finishes
-  // — after race 1 of 9 the leader can be at most 1/9 around the track, after
-  // race 5 of 9, 5/9 around, and so on. Everyone else scales proportionally
-  // by (score / leaderScore) within that envelope. A 0-point player sits at
-  // the starting gate.
-  // Note: the envelope tracks "racing has happened" (locked or finished),
-  // independent of the host's score-reveal flow which still gates the
-  // finale trigger via `raceProgress`.
-  const envelopeRaces = useMemo(
-    () => races.filter(r => r.status === 'finished' || r.status === 'locked').length,
-    [races]
+  // maximum reachable position grows by 1/N each time a race is SCORED.
+  // Lock-only status changes don't advance the field — there are no results
+  // yet. We derive the envelope from `scores` (rather than race status) so
+  // that positions only ever shift when score rows actually change in the
+  // database — never when a race flips from 'open' to 'locked'.
+  // Everyone scales proportionally by (score / leaderScore) inside that
+  // envelope. A 0-point player sits at the starting gate.
+  //
+  // Hard cap at 99% until every race is finished AND revealed
+  // (completedRaces === totalRaces): no token may render AT or past the
+  // finish line until the event is genuinely over.
+  const scoredRaces = useMemo(
+    () => Math.min(totalRaces, new Set(scores.map(s => s.race_id)).size),
+    [scores, totalRaces]
   )
-  const maxProgress = totalRaces > 0 ? envelopeRaces / totalRaces : 0
+  const allFinished = totalRaces > 0 && completedRaces === totalRaces
+  const rawMaxProgress = totalRaces > 0 ? scoredRaces / totalRaces : 0
+  const maxProgress = allFinished ? rawMaxProgress : Math.min(rawMaxProgress, 0.99)
   // Compressed spread: the field bunches together inside the back half of
   // the current envelope. Anyone with even a single point jumps to at least
   // 50% of maxProgress, and the leader sits at maxProgress. This keeps the
@@ -302,28 +307,25 @@ export default function TrackPage() {
   const compactTokens = playersOnTrack.length >= 20
   const TOKEN_RADIUS = compactTokens ? 11 : 15
 
-  // Cluster handling:
-  //   Up to 4 players sharing ~the same progress fan out perpendicular to
-  //   the path. A cluster of 5+ shows the top 3 (by progress, ties broken
-  //   by source order) plus a "+N more" badge in the 4th slot.
-  //   Offsets are ONE-SIDED — slot 0 sits on the rail-hugging line, every
-  //   subsequent slot drifts outward toward the outer rail. The leader
-  //   (highest progress in a cluster) always gets the innermost slot.
-  //   Threshold 0.015 of TOTAL_LEN (~18 viewBox units along the path) is
-  //   tight enough that distinct scores stay separate but tied players
-  //   still collapse together.
-  const CLUSTER_THRESHOLD = 0.015
-  const MAX_VISIBLE_PER_CLUSTER = 4
-  const OFFSET_TABLE: Record<number, number[]> = {
-    1: [0],
-    2: [0, 14],
-    3: [0, 11, 22],
-    4: [0, 8, 16, 24],
-  }
-  const { positionedPlayers, clusterOverflows } = useMemo(() => {
+  // Cluster handling: when players share ~the same progress, fan them out
+  // diagonally — primary stagger is perpendicular outward from the rail,
+  // secondary stagger walks them slightly back along the track. Highest
+  // score in the cluster gets the rail (slot 0); subsequent slots step
+  // outward + back. When the perpendicular fan would exceed the track
+  // surface, it wraps back to the rail and the next "wave" continues
+  // further back along the track. At-gate clusters (everyone tied at 0)
+  // fan FORWARD into the chute instead, since there's no room behind.
+  const CLUSTER_THRESHOLD = 0.03
+  const positionedPlayers = useMemo(() => {
     const sorted = [...playersOnTrack].sort((a, b) => a.trackProgress - b.trackProgress)
-    const positioned: Array<typeof sorted[number] & { vOffset: number }> = []
-    const overflows: Array<{ progress: number; vOffset: number; count: number }> = []
+    const positioned: Array<typeof sorted[number] & { vOffset: number; progressDelta: number }> = []
+
+    // Fan geometry — keep tokens inside the track surface.
+    // Outward room = (outer rail - racing line) - token radius - small margin.
+    const outwardRoom = (OUTER_R - PATH_R) - TOKEN_RADIUS - 2
+    const PERP_STEP = compactTokens ? 9 : 11
+    const ALONG_STEP = 0.014  // ~1.4% of track per slot, in the user's 1-2% guidance
+    const perpSlotsPerWave = Math.max(2, Math.floor(outwardRoom / PERP_STEP) + 1)
 
     let i = 0
     while (i < sorted.length) {
@@ -335,29 +337,35 @@ export default function TrackPage() {
         cluster.push(sorted[i + cluster.length])
       }
 
-      // Reverse so the leader (highest progress) lands in slot 0 = rail.
-      const ordered = [...cluster].reverse()
+      // Slot 0 = highest score in cluster (rail). Stable order on ties.
+      const ordered = [...cluster].sort(
+        (a, b) => b.total - a.total || a.player.id.localeCompare(b.player.id)
+      )
 
-      if (ordered.length <= MAX_VISIBLE_PER_CLUSTER) {
-        const offsets = OFFSET_TABLE[ordered.length]
-        ordered.forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
-      } else {
-        // Top 3 visible on the rail side; "+N more" badge takes slot 3.
-        const offsets = OFFSET_TABLE[4]
-        ordered.slice(0, 3).forEach((p, k) => positioned.push({ ...p, vOffset: offsets[k] }))
-        overflows.push({
-          progress: ordered[0].trackProgress,
-          vOffset: offsets[3],
-          count: ordered.length - 3,
+      // If the cluster's leader is at the gate, fan forward into the chute;
+      // otherwise fan backward (the normal case during a race).
+      const direction = ordered[0].trackProgress < 0.04 ? +1 : -1
+
+      ordered.forEach((p, k) => {
+        const perpIdx = k % perpSlotsPerWave
+        const waveIdx = Math.floor(k / perpSlotsPerWave)
+        positioned.push({
+          ...p,
+          vOffset: perpIdx * PERP_STEP,
+          // Within a wave: step back/forward 1 ALONG_STEP per perp slot,
+          // so the cluster reads as a diagonal fan rather than a vertical
+          // bar. New waves start one full wave-length further along.
+          progressDelta:
+            direction * (perpIdx * ALONG_STEP + waveIdx * perpSlotsPerWave * ALONG_STEP),
         })
-      }
+      })
 
       i += cluster.length
     }
 
-    return { positionedPlayers: positioned, clusterOverflows: overflows }
+    return positioned
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playersOnTrack])
+  }, [playersOnTrack, compactTokens])
 
   // Derby finish trigger: when raceProgress crosses 1.0, fire confetti + open winner popup
   const finishedRef = useRef(false)
@@ -604,7 +612,8 @@ export default function TrackPage() {
 
           {/* Player tokens */}
           {positionedPlayers.map(row => {
-            const pos = positionAt(row.trackProgress, row.vOffset)
+            const adjusted = Math.max(0, Math.min(maxProgress, row.trackProgress + row.progressDelta))
+            const pos = positionAt(adjusted, row.vOffset)
             const isLeader = leader?.player.id === row.player.id
             return (
               <PlayerToken
@@ -617,32 +626,6 @@ export default function TrackPage() {
                 revealDelay={revealAnimAt > 0 ? (playerRevealDelays.get(row.player.id) ?? 0) : 0}
                 onTap={() => setSelectedPlayer(row.player.id)}
               />
-            )
-          })}
-
-          {/* Cluster overflow badges — "+N more" tokens for clusters of 5+ */}
-          {clusterOverflows.map((o, i) => {
-            const pos = positionAt(o.progress, o.vOffset)
-            const r = TOKEN_RADIUS - 3
-            return (
-              <g
-                key={`overflow-${i}`}
-                transform={`translate(${pos.x}, ${pos.y})`}
-                filter="url(#tokenShadow)"
-              >
-                <circle cx="0" cy="0" r={r} fill="#1a1a1a" stroke="#C9A84C" strokeWidth="1.4" />
-                <text
-                  x="0"
-                  y={r * 0.35}
-                  fontSize={r * 0.85}
-                  fontWeight="bold"
-                  fill="#C9A84C"
-                  textAnchor="middle"
-                  fontFamily="monospace"
-                >
-                  +{o.count}
-                </text>
-              </g>
             )
           })}
         </svg>
