@@ -821,7 +821,7 @@ function RaceCard({
             <span className="text-white/50 text-xs font-mono">RACE {race.race_number}</span>
             {race.is_featured && (
               <span className="text-[10px] font-bold text-[var(--gold)] bg-[var(--gold)]/15 border border-[var(--gold)]/40 px-1.5 py-0.5 rounded">
-                ⭐ FEATURED {race.featured_multiplier > 1 ? `${race.featured_multiplier}x` : ''}
+                ⭐ {race.featured_multiplier}X POINTS
               </span>
             )}
           </div>
@@ -1191,7 +1191,7 @@ function TokenAssignModal({
                 <div>
                   <div className="text-white/60 text-xs">RACE {race.race_number}</div>
                   <div className="text-white font-semibold">{race.name || `Race ${race.race_number}`}</div>
-                  {race.is_featured && <div className="text-[var(--gold)] text-xs">⭐ Featured ({race.featured_multiplier}x base)</div>}
+                  {race.is_featured && <div className="text-[var(--gold)] text-xs">⭐ {race.featured_multiplier}X POINTS</div>}
                 </div>
                 {isCurrent && <span className="text-[var(--gold)] text-xl">✓</span>}
               </button>

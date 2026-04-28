@@ -1205,7 +1205,7 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
             >
               {race.is_featured ? '⭐' : '☆'}
               {race.is_featured && (
-                <span className="ml-0.5">FEATURED · {race.featured_multiplier}×</span>
+                <span className="ml-0.5">{race.featured_multiplier}X POINTS</span>
               )}
             </button>
             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${statusColor}`}>{race.status}</span>
@@ -1631,7 +1631,7 @@ function ResultsCard({
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
           <div className="text-white/60 text-xs font-mono">
-            RACE {race.race_number} {race.is_featured && <span className="text-[var(--gold)]">⭐ DERBY</span>}
+            RACE {race.race_number} {race.is_featured && <span className="text-[var(--gold)]">⭐ {race.featured_multiplier}X POINTS</span>}
           </div>
           <h3 className="text-white font-serif text-lg font-bold truncate">{race.name}</h3>
           <div className="mt-0.5">
