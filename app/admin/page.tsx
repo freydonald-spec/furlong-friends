@@ -168,13 +168,15 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, event?.id])
 
-  // Auto-lock: on every 1s tick, lock any race whose post_time has just passed.
+  // Auto-lock: client-side backup for the pg_cron job (scripts/auto-lock-races-cron.sql).
+  // The cron is authoritative and runs every minute regardless of who has the app open;
+  // this 1s tick just makes the lock feel instant when the admin is watching.
   // `autoLockedRef` prevents us from re-firing the same update while waiting
   // for the realtime subscription to echo the new status back.
   useEffect(() => {
     if (!authed || !event) return
     const overdue = races.filter(r => {
-      if (r.status === 'locked' || r.status === 'finished') return false
+      if (r.status !== 'upcoming' && r.status !== 'open') return false
       if (autoLockedRef.current.has(r.id)) return false
       const target = parseLocalIso(r.post_time)
       return target != null && target.getTime() <= now
@@ -263,6 +265,12 @@ export default function AdminPage() {
             onClick={createNewEvent}
             className="px-3 h-9 rounded-full bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-xs font-bold whitespace-nowrap"
           >+ New Event</button>
+          <a
+            href="/exacta"
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 h-9 inline-flex items-center rounded-full bg-emerald-700/60 border border-emerald-400/40 text-white text-xs font-bold whitespace-nowrap"
+          >🎯 Exacta Board</a>
         </div>
       </header>
 

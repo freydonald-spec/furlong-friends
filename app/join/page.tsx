@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "@/lib/supabase"
-import { AVATARS, AvatarIcon } from "@/lib/avatars"
+import { AVATARS, AvatarIcon, useAvatarSampler } from "@/lib/avatars"
 import type { Event, Player } from "@/lib/types"
 
 type TakenInfo = { avatar: string; name: string; id: string }
@@ -70,6 +70,7 @@ export default function JoinPage() {
   const [error, setError] = useState<string | null>(null)
   const [rejoinCandidate, setRejoinCandidate] = useState<TakenInfo | null>(null)
   const [welcomeMatch, setWelcomeMatch] = useState<WelcomeInfo | null>(null)
+  const sampler = useAvatarSampler({ currentId: selectedAvatar })
 
   async function init() {
     try {
@@ -358,8 +359,8 @@ export default function JoinPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-5 gap-2.5 mb-6">
-              {AVATARS.map(avatar => {
+            <div className="grid grid-cols-5 gap-2.5 mb-3">
+              {sampler.visible.map(avatar => {
                 const t = taken.find(p => p.avatar === avatar.id)
                 const selected = selectedAvatar === avatar.id
                 return (
@@ -368,7 +369,7 @@ export default function JoinPage() {
                     onClick={() => pickAvatar(avatar.id)}
                     title={t ? `Taken by ${t.name}` : avatar.label}
                     className={`
-                      relative aspect-square flex items-center justify-center rounded-xl border-2 transition-all min-h-[48px]
+                      relative aspect-square flex items-center justify-center rounded-xl border-2 transition-all min-h-[64px]
                       ${selected
                         ? 'border-[var(--gold)] bg-[var(--gold)]/20 scale-105'
                         : t
@@ -380,6 +381,38 @@ export default function JoinPage() {
                   </button>
                 )
               })}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 mb-6 px-1">
+              {!sampler.expanded ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={sampler.shuffle}
+                    className="text-sm text-white/70 hover:text-white font-medium"
+                  >
+                    🔀 Shuffle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={sampler.expand}
+                    className="text-sm text-[var(--gold)] hover:text-[var(--gold)]/80 font-medium"
+                  >
+                    See all {sampler.total} →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm text-white/50">Showing all {sampler.total}</span>
+                  <button
+                    type="button"
+                    onClick={sampler.collapse}
+                    className="text-sm text-white/70 hover:text-white font-medium"
+                  >
+                    Show fewer
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="mt-auto space-y-3">

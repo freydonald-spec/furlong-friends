@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kentucky Derby Exacta Board 2025</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --rose: #8B1A2F;
+    --rose-light: #B52340;
+    --gold: #C9A84C;
+    --gold-light: #E8C96A;
+    --cream: #F5EDD6;
+    --dark: #1A0A0E;
+    --green: #1B4332;
+    --green-light: #2D6A4F;
+    --text-dark: #2C1810;
+    --border: #C9A84C;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--dark);
+    font-family: 'Libre Baskerville', serif;
+    color: var(--cream);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(201,168,76,0.03) 40px, rgba(201,168,76,0.03) 41px),
+      repeating-linear-gradient(-45deg, transparent, transparent 40px, rgba(201,168,76,0.03) 40px, rgba(201,168,76,0.03) 41px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* HEADER */
+  .header {
+    text-align: center;
+    padding: 30px 20px 20px;
+    border-bottom: 2px solid var(--gold);
+    margin-bottom: 24px;
+    position: relative;
+  }
+
+  .header::before, .header::after {
+    content: '🌹';
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 2rem;
+  }
+  .header::before { left: 20px; }
+  .header::after { right: 20px; }
+
+  .header-sub {
+    font-family: 'Bebas Neue', cursive;
+    letter-spacing: 6px;
+    color: var(--gold);
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+  }
+
+  .header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.8rem, 4vw, 3.2rem);
+    font-weight: 900;
+    color: var(--cream);
+    line-height: 1.1;
+  }
+
+  .header h1 span { color: var(--gold); font-style: italic; }
+
+  .header-year {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.1rem;
+    letter-spacing: 4px;
+    color: var(--rose-light);
+    margin-top: 4px;
+  }
+
+  /* POT BANNER */
+  .pot-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, var(--rose), var(--rose-light));
+    border: 2px solid var(--gold);
+    border-radius: 12px;
+    padding: 18px 28px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .pot-label {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 1.6rem;
+    letter-spacing: 4px;
+    color: var(--gold);
+  }
+  .pot-sub {
+    font-size: 0.78rem;
+    color: rgba(245,237,214,0.8);
+    margin-top: 2px;
+    letter-spacing: 1px;
+  }
+  .pot-amount {
+    font-family: 'Bebas Neue', cursive;
+    font-size: 3rem;
+    color: var(--gold);
+    line-height: 1;
+    text-align: right;
+    text-shadow: 0 2px 10px rgba(201,168,76,0.4);
+  }
+  .pot-right { text-align: right; }
+
+  /* PICK MODE ACTIVE CELL */
+  .cell-picking {
+    cursor: crosshair !important;
+    outline: 2px dashed rgba(201,168,76,0.6);
+  }
+  .cell-picking:hover {
+    outline: 2px solid var(--gold);
+    transform: scale(1.4) !important;
+  }
+
+  /* ACTIVE PLAYER PICKING BANNER */
+  .picking-banner {
+    display: none;
+    background: rgba(201,168,76,0.12);
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: var(--gold);
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .picking-banner.active { display: flex; }
+
+  /* CONTROLS PANEL */
+  .controls {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .control-section h3 {
+    font-family: 'Bebas Neue', cursive;
+    letter-spacing: 3px;
+    color: var(--gold);
+    font-size: 1rem;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(201,168,76,0.3);
+  }
+
+  .add-player-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  input[type="text"] {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--cream);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 0.85rem;
+    flex: 1;
+    min-width: 120px;
+    transition: border-color 0.2s;
+  }
+
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--gold);
+  }
+
+  input[type="text"]::placeholder { color: rgba(245,237,214,0.4); }
+
+  select {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(201,168,76,0.4);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--cream);
+    font-family: 'Libre Baskerville', serif;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  select option { background: #1A0A0E; }
+
+  .btn {
+    font-family: 'Bebas Neue', cursive;
+    letter-spacing: 2px;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+
+  .btn-gold {
+    background: linear-gradient(135deg, var(--gold), var(--gold-light));
+    color: var(--dark);
+  }
+  .btn-gold:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(201,168,76,0.4); }
+
+  .btn-rose {
+    background: linear-gradient(135deg, var(--rose), var(--rose-light));
+    color: var(--cream);
+  }
+  .btn-rose:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(139,26,47,0.4); }
+
+  .btn-green {
+    background: linear-gradient(135deg, var(--green), var(--green-light));
+    color: var(--cream);
+  }
+  .btn-green:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(27,67,50,0.4); }
+
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+  }
+  .btn-outline:hover { background: rgba(201,168,76,0.1); }
+
+  /* PLAYERS LIST */
+  .players-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+
+  .player-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255,255,255,0.05);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    border-left: 3px solid;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+  .player-name { font-weight: 700; }
+  .player-squares { color: var(--gold); font-size: 0.75rem; margin-left: 6px; }
+  .player-remove { background: none; border: none; color: rgba(245,237,214,0.4); cursor: pointer; font-size: 0.9rem; padding: 0 4px; }
+  .player-remove:hover { color: var(--rose-light); }
+
+  /* ACTION BUTTONS ROW */
+  .action-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+
+  .status-badge {
+    margin-left: auto;
+    font-size: 0.78rem;
+    color: rgba(245,237,214,0.6);
+    font-style: italic;
+  }
+
+  /* LEGEND */
+  .legend {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(201,168,76,0.15);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: rgba(245,237,214,0.8);
+  }
+
+  .legend-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.2);
+    flex-shrink: 0;
+  }
+
+  /* BOARD WRAPPER */
+  .board-wrapper {
+    overflow-x: auto;
+    padding-bottom: 10px;
+  }
+
+  .board-container {
+    display: inline-block;
+    min-width: 100%;
+  }
+
+  /* AXIS LABELS */
+  .board-label {
+    font-family: 'Bebas Neue', cursive;
+    letter-spacing: 3px;
+    color: var(--gold);
+    font-size: 0.8rem;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  .board-label.vertical {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    margin-bottom: 0;
+    margin-right: 6px;
+    align-self: center;
+  }
+
+  .board-outer {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  /* THE GRID */
+  .grid-wrapper {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .grid-header-row {
+    display: flex;
+    margin-left: 52px; /* offset for row labels */
+  }
+
+  .col-label {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Bebas Neue', cursive;
+    font-size: 0.75rem;
+    color: var(--gold-light);
+    flex-shrink: 0;
+    background: rgba(201,168,76,0.1);
+    border-radius: 3px 3px 0 0;
+    margin: 0 1px;
+  }
+
+  .grid-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .grid-row {
+    display: flex;
+    gap: 1px;
+    align-items: center;
+  }
+
+  .row-label {
+    width: 50px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Bebas Neue', cursive;
+    font-size: 0.75rem;
+    color: var(--gold-light);
+    flex-shrink: 0;
+    background: rgba(201,168,76,0.1);
+    border-radius: 3px 0 0 3px;
+    margin-right: 1px;
+  }
+
+  .cell {
+    width: 26px;
+    height: 26px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    cursor: default;
+    transition: transform 0.15s, box-shadow 0.15s;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.45rem;
+    font-weight: 700;
+    overflow: hidden;
+    font-family: 'Bebas Neue', cursive;
+  }
+
+  .cell:hover { transform: scale(1.3); z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+
+  .cell-empty {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .cell-invalid {
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(80,0,0,0.5),
+      rgba(80,0,0,0.5) 3px,
+      rgba(30,0,0,0.6) 3px,
+      rgba(30,0,0,0.6) 6px
+    );
+    border: 1px solid rgba(139,26,47,0.4);
+    cursor: not-allowed;
+  }
+
+  .cell-winner {
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    border: 1px solid #FFD700;
+    animation: winnerPulse 1.5s infinite;
+  }
+
+  @keyframes winnerPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(255,215,0,0.6); }
+    50% { box-shadow: 0 0 16px rgba(255,215,0,1); }
+  }
+
+  /* TOOLTIP */
+  .tooltip {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--dark);
+    border: 1px solid var(--gold);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 100;
+    font-family: 'Libre Baskerville', serif;
+    font-style: normal;
+    font-weight: normal;
+    color: var(--cream);
+    transition: opacity 0.15s;
+    letter-spacing: 0;
+  }
+
+  .cell:hover .tooltip { opacity: 1; }
+
+  /* RESULT SECTION */
+  .result-section {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(201,168,76,0.3);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 24px;
+  }
+
+  .result-section h3 {
+    font-family: 'Bebas Neue', cursive;
+    letter-spacing: 3px;
+    color: var(--gold);
+    margin-bottom: 14px;
+    font-size: 1rem;
+  }
+
+  .result-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .result-inputs {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .result-label {
+    font-size: 0.82rem;
+    color: rgba(245,237,214,0.7);
+    min-width: 60px;
+  }
+
+  .horse-num-input {
+    width: 70px;
+    text-align: center;
+  }
+
+  .winner-display {
+    margin-top: 14px;
+    padding: 14px;
+    background: rgba(201,168,76,0.08);
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    display: none;
+  }
+
+  .winner-display.visible { display: block; }
+
+  .winner-title {
+    font-family: 'Bebas Neue', cursive;
+    letter-spacing: 3px;
+    color: var(--gold);
+    font-size: 0.9rem;
+    margin-bottom: 8px;
+  }
+
+  .winner-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem;
+    font-style: italic;
+    color: var(--cream);
+  }
+
+  .winner-detail {
+    font-size: 0.8rem;
+    color: rgba(245,237,214,0.7);
+    margin-top: 4px;
+  }
+
+  /* FOOTER */
+  .footer {
+    text-align: center;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(201,168,76,0.2);
+    font-size: 0.75rem;
+    color: rgba(245,237,214,0.4);
+    font-style: italic;
+  }
+
+  /* Print */
+  @media print {
+    body { background: white; color: black; }
+    .controls, .action-row, .result-section { display: none; }
+    .cell-empty { background: #f0f0f0; border-color: #ccc; }
+    .col-label, .row-label { color: #333; background: #eee; }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+  ::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 3px; }
+
+  /* Display mode grid cells - smaller for full board fit */
+  .dcell {
+    width: 22px;
+    height: 22px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.4rem;
+    font-weight: 700;
+    font-family: 'Bebas Neue', cursive;
+    position: relative;
+  }
+  .dcell:hover .dtip { opacity: 1; }
+  .dtip {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1A0A0E;
+    border: 1px solid #C9A84C;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 0.65rem;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 200;
+    font-family: 'Libre Baskerville', serif;
+    color: #F5EDD6;
+    transition: opacity 0.15s;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-sub">Churchill Downs · Louisville, Kentucky</div>
+    <h1>Kentucky Derby <span>Exacta</span> Board</h1>
+    <div class="header-year">May 2, 2026 · The 152nd Run for the Roses</div>
+  </div>
+
+  <!-- WINNER TAKES ALL BANNER -->
+  <div class="pot-banner" id="potBanner">
+    <div class="pot-left">
+      <div class="pot-label">🏆 WINNER TAKES ALL</div>
+      <div class="pot-sub">Exacta · 1st & 2nd place in exact order</div>
+    </div>
+    <div class="pot-right">
+      <div class="pot-amount" id="potAmount">$0</div>
+      <div class="pot-sub"><span id="potSquares">0</span> of 380 squares sold</div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="control-section">
+      <h3>Add Player</h3>
+      <div class="add-player-form">
+        <div class="form-row">
+          <input type="text" id="playerName" placeholder="Player name..." />
+          <select id="bundleSize" onchange="handleBundleChange(this.value)">
+            <option value="2">2 squares — $2</option>
+            <option value="4">4 squares — $4</option>
+            <option value="8">8 squares — $8</option>
+            <option value="16" selected>16 squares — $16</option>
+            <option value="24">24 squares — $24</option>
+            <option value="32">32 squares — $32</option>
+            <option value="custom">Custom amount...</option>
+          </select>
+          <input type="text" id="customAmount" placeholder="# squares" style="width:90px;display:none;" />
+          <button class="btn btn-gold" onclick="addPlayer()">Add</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:4px; flex-wrap:wrap;">
+          <label style="font-size:0.75rem; color:rgba(245,237,214,0.7); display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="radio" name="assignMode" value="random" onchange="setMode('random')" style="accent-color:#C9A84C;" />
+            Random assignment
+          </label>
+          <label style="font-size:0.75rem; color:rgba(245,237,214,0.7); display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="radio" name="assignMode" value="pick" checked onchange="setMode('pick')" style="accent-color:#C9A84C;" />
+            Pick your own squares
+          </label>
+        </div>
+        <div id="pickModeHint" style="display:block; font-size:0.75rem; color:#C9A84C; font-style:italic; margin-top:2px;">
+          Click "Add" then click squares on the board to claim them
+        </div>
+      </div>
+    </div>
+    <div class="control-section">
+      <h3>Players (<span id="playerCount">0</span> · <span id="squareCount">0</span>/380 squares)</h3>
+      <div class="players-list" id="playersList">
+        <div style="font-size:0.8rem; color:rgba(245,237,214,0.4); font-style:italic; padding:6px;">No players yet — add someone above</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTION ROW -->
+  <div class="action-row">
+    <button class="btn btn-rose" onclick="clearAll()">Clear All</button>
+    <button class="btn btn-green" onclick="shuffleNumbers()">🎲 Randomize Horse Numbers</button>
+    <button class="btn btn-outline" onclick="window.print()">🖨 Print Board</button>
+    <button class="btn" style="background:linear-gradient(135deg,#8B1A2F,#B52340);color:#F5EDD6;font-size:1rem;padding:8px 20px;" onclick="enterDisplayMode()">📺 Display Mode</button>
+    <div class="status-badge" id="statusBadge">Add players, then randomize numbers to lock the board</div>
+  </div>
+
+  <!-- PICKING BANNER -->
+  <div class="picking-banner" id="pickingBanner">
+    <span id="pickingMsg">Click squares to claim them</span>
+    <span id="pickingCount" style="font-weight:700;"></span>
+    <button class="btn btn-gold" onclick="confirmPicks()" id="confirmPicksBtn" style="padding:5px 14px;font-size:0.8rem;">✓ Confirm</button>
+    <button class="btn btn-outline" onclick="cancelPicks()" style="padding:5px 14px;font-size:0.8rem;">Cancel</button>
+  </div>
+
+  <!-- LEGEND -->
+  <div class="legend" id="legend">
+    <div style="font-size:0.75rem; color:rgba(245,237,214,0.5); font-style:italic;">Player legend will appear here as you add players</div>
+  </div>
+
+  <!-- BOARD -->
+  <div style="margin-bottom:8px;">
+    <div class="board-label" style="margin-left:52px;">🏇 2nd Place Horse (Columns)</div>
+  </div>
+  <div class="board-outer">
+    <div class="board-label vertical">🏇 1st Place Horse (Rows)</div>
+    <div class="grid-wrapper" id="gridWrapper">
+      <!-- Built by JS -->
+    </div>
+  </div>
+
+  <!-- RESULT SECTION -->
+  <div class="result-section">
+    <h3>🏆 Enter Race Results</h3>
+    <div class="result-row">
+      <div class="result-inputs">
+        <span class="result-label">🥇 1st Place:</span>
+        <input type="text" class="horse-num-input" id="first" placeholder="Horse #" />
+        <span class="result-label">🥈 2nd Place:</span>
+        <input type="text" class="horse-num-input" id="second" placeholder="Horse #" />
+        <button class="btn btn-gold" onclick="findWinner()">Find Winner</button>
+        <button class="btn btn-outline" onclick="clearResult()">Clear</button>
+      </div>
+    </div>
+    <div class="winner-display" id="winnerDisplay">
+      <div class="winner-title">🎉 Exacta Winner</div>
+      <div class="winner-name" id="winnerName">—</div>
+      <div class="winner-detail" id="winnerDetail">—</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    The Run for the Roses · Churchill Downs · May 2, 2026<br>
+    Exacta: correctly predicting 1st & 2nd place finishers in exact order
+  </div>
+</div>
+
+<!-- DISPLAY MODE OVERLAY -->
+<div id="displayOverlay" style="display:none; position:fixed; inset:0; background:#0a0203; z-index:1000; flex-direction:column;">
+  <!-- TOP BAR -->
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 24px; background:linear-gradient(135deg,#8B1A2F,#B52340); border-bottom:2px solid #C9A84C; flex-shrink:0;">
+    <div>
+      <div style="font-family:'Bebas Neue',cursive; font-size:1.1rem; letter-spacing:4px; color:#C9A84C;">Churchill Downs · May 2, 2026 · The 152nd Run for the Roses</div>
+      <div style="font-family:'Bebas Neue',cursive; font-size:1.8rem; letter-spacing:3px; color:#F5EDD6; line-height:1;">Kentucky Derby <span style="color:#C9A84C; font-style:italic;">Exacta</span> Board</div>
+    </div>
+    <div style="text-align:center; padding:0 24px;">
+      <div style="font-family:'Bebas Neue',cursive; font-size:0.9rem; letter-spacing:3px; color:rgba(245,237,214,0.7);">🏆 WINNER TAKES ALL</div>
+      <div id="displayPot" style="font-family:'Bebas Neue',cursive; font-size:3.5rem; color:#C9A84C; line-height:1; text-shadow:0 2px 20px rgba(201,168,76,0.5);">$0</div>
+      <div id="displaySold" style="font-size:0.7rem; color:rgba(245,237,214,0.6); letter-spacing:1px;">0 of 380 squares sold</div>
+    </div>
+    <button onclick="exitDisplayMode()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#F5EDD6; border-radius:8px; padding:8px 16px; cursor:pointer; font-family:'Libre Baskerville',serif; font-size:0.85rem;">✕ Exit</button>
+  </div>
+
+  <!-- MAIN CONTENT: BOARD + LEGEND -->
+  <div style="display:flex; flex:1; overflow:hidden; padding:12px; gap:12px;">
+    
+    <!-- BOARD AREA -->
+    <div style="flex:1; overflow:auto; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+      <div style="font-family:'Bebas Neue',cursive; font-size:0.7rem; letter-spacing:3px; color:#C9A84C; margin-bottom:4px; text-align:center;">🏇 2nd Place Horse (Columns)</div>
+      <div style="display:flex; align-items:flex-start;">
+        <div style="font-family:'Bebas Neue',cursive; font-size:0.65rem; letter-spacing:2px; color:#C9A84C; writing-mode:vertical-rl; transform:rotate(180deg); margin-right:4px; align-self:center;">🏇 1st Place Horse (Rows)</div>
+        <div id="displayGrid" style="display:flex; flex-direction:column; gap:1px;"></div>
+      </div>
+    </div>
+
+    <!-- LEGEND SIDEBAR -->
+    <div style="width:200px; flex-shrink:0; display:flex; flex-direction:column; gap:0; overflow-y:auto; background:rgba(255,255,255,0.03); border:1px solid rgba(201,168,76,0.15); border-radius:10px; padding:10px;">
+      <div style="font-family:'Bebas Neue',cursive; letter-spacing:3px; color:#C9A84C; font-size:0.8rem; margin-bottom:8px; text-align:center; border-bottom:1px solid rgba(201,168,76,0.2); padding-bottom:6px;">PLAYERS</div>
+      <div id="displayLegend"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── STATE ──────────────────────────────────────────────────────
+  const N = 20;
+  let players = [];
+  let board = Array(N).fill(null).map(() => Array(N).fill(null));
+  let rowNums = [...Array(N)].map((_, i) => i + 1);
+  let colNums = [...Array(N)].map((_, i) => i + 1);
+  let numbersLocked = false;
+  let winnerCell = null;
+  let assignMode = 'pick'; // 'random' or 'pick'
+  let pickingPlayer = null;  // player index currently picking squares
+  let pickingCount = 0;      // how many squares they've selected so far
+  let pickingTarget = 0;     // how many squares they need to pick
+
+  const COLORS = [
+    '#C0392B','#1A6B3C','#2471A3','#8E44AD','#D97706',
+    '#0E7490','#BE185D','#065F46','#92400E','#1D4ED8',
+    '#7C3AED','#B45309','#0F766E','#9D174D','#1E40AF',
+    '#6D28D9','#047857','#B91C1C','#0369A1','#7E22CE',
+    '#D97706','#15803D','#C2410C','#0E7490','#4338CA'
+  ];
+
+  // ── SHUFFLE helper ─────────────────────────────────────────────
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // ── ADD PLAYER ─────────────────────────────────────────────────
+  // ── MODE TOGGLE ────────────────────────────────────────────────
+  function setMode(mode) {
+    assignMode = mode;
+    const hint = document.getElementById('pickModeHint');
+    hint.style.display = mode === 'pick' ? 'block' : 'none';
+  }
+
+  // ── PICK MODE: cell clicked ─────────────────────────────────────
+  function clickCell(r, c) {
+    if (assignMode !== 'pick' || pickingPlayer === null) return;
+    if (r === c) return; // diagonal invalid
+    if (board[r][c] !== null) return; // already taken
+
+    if (pickingCount >= pickingTarget) {
+      alert(`You've already selected ${pickingTarget} squares. Click ✓ Confirm to save.`);
+      return;
+    }
+
+    board[r][c] = pickingPlayer;
+    pickingCount++;
+    players[pickingPlayer].count = pickingCount;
+    updatePickingBanner();
+    render();
+  }
+
+  function updatePickingBanner() {
+    const banner = document.getElementById('pickingBanner');
+    const msg = document.getElementById('pickingMsg');
+    const cnt = document.getElementById('pickingCount');
+    if (pickingPlayer !== null) {
+      banner.classList.add('active');
+      msg.textContent = `${players[pickingPlayer].name} — click squares to claim:`;
+      cnt.textContent = `${pickingCount} / ${pickingTarget} selected`;
+    } else {
+      banner.classList.remove('active');
+    }
+  }
+
+  function confirmPicks() {
+    if (pickingCount < pickingTarget) {
+      if (!confirm(`You've only selected ${pickingCount} of ${pickingTarget} squares. Save anyway?`)) return;
+    }
+    pickingPlayer = null;
+    pickingCount = 0;
+    pickingTarget = 0;
+    updatePickingBanner();
+    render();
+  }
+
+  function cancelPicks() {
+    if (pickingPlayer === null) return;
+    // Remove their squares
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (board[r][c] === pickingPlayer) board[r][c] = null;
+    players.splice(pickingPlayer, 1);
+    players.forEach((p, i) => { p.idx = i; p.color = COLORS[i % COLORS.length]; });
+    pickingPlayer = null;
+    pickingCount = 0;
+    pickingTarget = 0;
+    updatePickingBanner();
+    render();
+  }
+
+  function handleBundleChange(val) {
+    const customInput = document.getElementById('customAmount');
+    customInput.style.display = val === 'custom' ? 'inline-block' : 'none';
+    if (val !== 'custom') customInput.value = '';
+  }
+
+  function getBundleCount() {
+    const sel = document.getElementById('bundleSize').value;
+    if (sel === 'custom') {
+      const v = parseInt(document.getElementById('customAmount').value);
+      return isNaN(v) || v < 1 ? 0 : v;
+    }
+    return parseInt(sel);
+  }
+
+  function addPlayer() {
+    const nameEl = document.getElementById('playerName');
+    const name = nameEl.value.trim();
+    const count = getBundleCount();
+    if (!name) { nameEl.focus(); return; }
+    if (!count || count < 1) { alert('Please enter a valid number of squares.'); return; }
+
+    const taken = players.reduce((s, p) => s + p.count, 0);
+    const available = (N * N - N) - taken;
+    if (count > available) {
+      alert(`Only ${available} squares left! Choose a smaller bundle.`);
+      return;
+    }
+
+    const idx = players.length;
+    const color = COLORS[idx % COLORS.length];
+
+    if (assignMode === 'random') {
+      players.push({ name, count, color, idx });
+      assignSquares(idx, count);
+      nameEl.value = '';
+      render();
+    } else {
+      // Pick mode — add player with 0 squares, let them click
+      players.push({ name, count: 0, color, idx });
+      pickingPlayer = idx;
+      pickingCount = 0;
+      pickingTarget = count;
+      nameEl.value = '';
+      updatePickingBanner();
+      render();
+    }
+  }
+
+  // Mark diagonal squares as invalid (same horse can't finish 1st AND 2nd)
+  for (let i = 0; i < N; i++) board[i][i] = 'X';
+
+  function assignSquares(playerIdx, count) {
+    const empties = [];
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (board[r][c] === null) empties.push([r, c]); // 'X' diagonals auto-excluded
+
+    const chosen = shuffle(empties).slice(0, count);
+    chosen.forEach(([r, c]) => board[r][c] = playerIdx);
+  }
+
+  // ── REMOVE PLAYER ──────────────────────────────────────────────
+  function removePlayer(idx) {
+    // Clear their squares
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (board[r][c] === idx) board[r][c] = (r === c) ? 'X' : null;
+
+    // Rebuild player indices
+    players.splice(idx, 1);
+    players.forEach((p, i) => { p.idx = i; p.color = COLORS[i % COLORS.length]; });
+
+    // Remap board
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (board[r][c] !== null && board[r][c] !== 'X' && board[r][c] > idx)
+          board[r][c]--;
+
+    winnerCell = null;
+    render();
+  }
+
+  function clearAll() {
+    if (players.length === 0) return;
+    const answer = prompt('Type RESET to clear all players and start over:');
+    if (answer === null) return; // cancelled
+    if (answer.trim().toUpperCase() !== 'RESET') {
+      alert('Incorrect — board not cleared. (Type RESET in all caps to confirm)');
+      return;
+    }
+    players = [];
+    board = Array(N).fill(null).map(() => Array(N).fill(null));
+    for (let i = 0; i < N; i++) board[i][i] = 'X';
+    rowNums = [...Array(N)].map((_, i) => i + 1);
+    colNums = [...Array(N)].map((_, i) => i + 1);
+    numbersLocked = false;
+    winnerCell = null;
+    pickingPlayer = null;
+    pickingCount = 0;
+    pickingTarget = 0;
+    updatePickingBanner();
+    document.getElementById('winnerDisplay').classList.remove('visible');
+    document.getElementById('first').value = '';
+    document.getElementById('second').value = '';
+    render();
+  }
+
+  // ── RANDOMIZE NUMBERS ──────────────────────────────────────────
+  function shuffleNumbers() {
+    rowNums = shuffle([...Array(N)].map((_, i) => i + 1));
+    colNums = shuffle([...Array(N)].map((_, i) => i + 1));
+    numbersLocked = true;
+    winnerCell = null;
+    document.getElementById('winnerDisplay').classList.remove('visible');
+    render();
+    document.getElementById('statusBadge').textContent = '✅ Numbers locked! Board is ready.';
+  }
+
+  // ── FIND WINNER ────────────────────────────────────────────────
+  function findWinner() {
+    const f = parseInt(document.getElementById('first').value);
+    const s = parseInt(document.getElementById('second').value);
+    if (isNaN(f) || isNaN(s) || f < 1 || f > 20 || s < 1 || s > 20 || f === s) {
+      alert('Please enter valid horse numbers (1-20) for both places.');
+      return;
+    }
+
+    const row = rowNums.indexOf(f);
+    const col = colNums.indexOf(s);
+
+    if (row === -1 || col === -1) {
+      alert('Horse numbers not found on board. Have you randomized yet?');
+      return;
+    }
+
+    winnerCell = { row, col };
+    const pIdx = board[row][col];
+    const wd = document.getElementById('winnerDisplay');
+    const wn = document.getElementById('winnerName');
+    const wdet = document.getElementById('winnerDetail');
+
+    if (pIdx !== null) {
+      wn.textContent = players[pIdx].name;
+      wdet.textContent = `Row ${f} (1st) × Column ${s} (2nd) — ${players[pIdx].count} squares owned`;
+      wdet.style.color = players[pIdx].color;
+    } else {
+      wn.textContent = 'Unclaimed Square';
+      wdet.textContent = `Row ${f} × Column ${s} — no player owns this square`;
+      wdet.style.color = 'rgba(245,237,214,0.6)';
+    }
+    wd.classList.add('visible');
+    render();
+  }
+
+  function clearResult() {
+    winnerCell = null;
+    document.getElementById('first').value = '';
+    document.getElementById('second').value = '';
+    document.getElementById('winnerDisplay').classList.remove('visible');
+    render();
+  }
+
+  // ── RENDER ─────────────────────────────────────────────────────
+  function render() {
+    renderPlayersList();
+    renderLegend();
+    renderGrid();
+    updateCounts();
+  }
+
+  function renderPlayersList() {
+    const el = document.getElementById('playersList');
+    if (players.length === 0) {
+      el.innerHTML = '<div style="font-size:0.8rem;color:rgba(245,237,214,0.4);font-style:italic;padding:6px;">No players yet — add someone above</div>';
+      return;
+    }
+    el.innerHTML = players.map((p, i) => `
+      <div class="player-item" style="border-left-color:${p.color};">
+        <span>
+          <span class="player-name" style="color:${p.color}">${p.name}</span>
+          <span class="player-squares">${p.count} squares</span>
+        </span>
+        <button class="player-remove" onclick="removePlayer(${i})" title="Remove">✕</button>
+      </div>
+    `).join('');
+  }
+
+  function renderLegend() {
+    const el = document.getElementById('legend');
+    if (players.length === 0) {
+      el.innerHTML = '<div style="font-size:0.75rem;color:rgba(245,237,214,0.5);font-style:italic;">Player legend will appear here as you add players</div>';
+      return;
+    }
+    el.innerHTML = players.map(p => `
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:${p.color};"></div>
+        <span>${p.name} (${p.count})</span>
+      </div>
+    `).join('');
+  }
+
+  function renderGrid() {
+    const wrapper = document.getElementById('gridWrapper');
+
+    // Column headers
+    const headerRow = document.createElement('div');
+    headerRow.className = 'grid-header-row';
+    colNums.forEach(n => {
+      const lbl = document.createElement('div');
+      lbl.className = 'col-label';
+      lbl.textContent = numbersLocked ? n : '?';
+      headerRow.appendChild(lbl);
+    });
+
+    // Grid body
+    const body = document.createElement('div');
+    body.className = 'grid-body';
+
+    for (let r = 0; r < N; r++) {
+      const row = document.createElement('div');
+      row.className = 'grid-row';
+
+      const rl = document.createElement('div');
+      rl.className = 'row-label';
+      rl.textContent = numbersLocked ? `#${rowNums[r]}` : '?';
+      row.appendChild(rl);
+
+      for (let c = 0; c < N; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        const pIdx = board[r][c];
+        const isWinner = winnerCell && winnerCell.row === r && winnerCell.col === c;
+        const isDiagonal = (r === c);
+        // Pick mode click handler
+        if (assignMode === 'pick' && pickingPlayer !== null && !isDiagonal && pIdx === null) {
+          cell.classList.add('cell-picking');
+        }
+        cell.addEventListener('click', () => clickCell(r, c));
+
+        if (isDiagonal) {
+          cell.classList.add('cell-invalid');
+          // Tooltip for diagonal
+          const tip = document.createElement('div');
+          tip.className = 'tooltip';
+          const lbl = numbersLocked ? `Horse #${rowNums[r]}` : `—`;
+          tip.textContent = `Invalid · ${lbl} can't finish 1st & 2nd`;
+          cell.appendChild(tip);
+        } else if (isWinner) {
+          cell.classList.add('cell-winner');
+          cell.textContent = '🏆';
+          const tip = document.createElement('div');
+          tip.className = 'tooltip';
+          cell.appendChild(tip);
+        } else if (pIdx !== null && pIdx !== 'X') {
+          cell.style.background = players[pIdx].color;
+          cell.style.border = `1px solid ${players[pIdx].color}`;
+          const parts = players[pIdx].name.split(' ');
+          cell.textContent = parts.map(p => p[0]).join('').slice(0,2).toUpperCase();
+          cell.style.color = 'rgba(255,255,255,0.9)';
+          cell.style.fontSize = '0.55rem';
+          const tip = document.createElement('div');
+          tip.className = 'tooltip';
+          const rowLabel = numbersLocked ? `Horse #${rowNums[r]}` : `Row ${r+1}`;
+          const colLabel = numbersLocked ? `Horse #${colNums[c]}` : `Col ${c+1}`;
+          tip.textContent = `${players[pIdx].name} · ${rowLabel} × ${colLabel}`;
+          cell.appendChild(tip);
+        } else {
+          cell.classList.add('cell-empty');
+          const tip = document.createElement('div');
+          tip.className = 'tooltip';
+          const rowLabel = numbersLocked ? `Horse #${rowNums[r]}` : `Row ${r+1}`;
+          const colLabel = numbersLocked ? `Horse #${colNums[c]}` : `Col ${c+1}`;
+          tip.textContent = `Empty · ${rowLabel} × ${colLabel}`;
+          cell.appendChild(tip);
+        }
+
+        row.appendChild(cell);
+      }
+      body.appendChild(row);
+    }
+
+    wrapper.innerHTML = '';
+    wrapper.appendChild(headerRow);
+    wrapper.appendChild(body);
+  }
+
+  function updateCounts() {
+    document.getElementById('playerCount').textContent = players.length;
+    const used = players.reduce((s, p) => s + p.count, 0);
+    document.getElementById('squareCount').textContent = used;
+    // Update pot banner
+    document.getElementById('potAmount').textContent = `$${used}`;
+    document.getElementById('potSquares').textContent = used;
+    if (!numbersLocked && players.length > 0) {
+      document.getElementById('statusBadge').textContent = `${380 - used} squares remaining — click 🎲 Randomize to lock in horse numbers`;
+    } else if (players.length === 0) {
+      document.getElementById('statusBadge').textContent = 'Add players, then randomize numbers to lock the board';
+    }
+  }
+
+  // ── DISPLAY MODE ───────────────────────────────────────────────
+  function enterDisplayMode() {
+    const overlay = document.getElementById('displayOverlay');
+    overlay.style.display = 'flex';
+    // Update pot
+    const used = players.reduce((s, p) => s + p.count, 0);
+    document.getElementById('displayPot').textContent = `$${used}`;
+    document.getElementById('displaySold').textContent = `${used} of 380 squares sold`;
+    renderDisplayGrid();
+    renderDisplayLegend();
+    // Request fullscreen if possible
+    if (overlay.requestFullscreen) overlay.requestFullscreen();
+    else if (overlay.webkitRequestFullscreen) overlay.webkitRequestFullscreen();
+  }
+
+  function exitDisplayMode() {
+    document.getElementById('displayOverlay').style.display = 'none';
+    if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }
+
+  function renderDisplayGrid() {
+    const grid = document.getElementById('displayGrid');
+    grid.innerHTML = '';
+
+    // Calculate adaptive cell size based on available space
+    const overlay = document.getElementById('displayOverlay');
+    const topBarH = overlay.querySelector('div').offsetHeight || 80;
+    const legendW = 200 + 24; // sidebar + gaps
+    const padding = 48;
+    const labelW = 42; // row label width
+    const labelH = 22; // col label height
+
+    const availW = window.innerWidth - legendW - padding - labelW;
+    const availH = window.innerHeight - topBarH - padding - labelH - 24;
+
+    // Cell size = fit 20 cells + 1px gaps into available space
+    const cellByW = Math.floor((availW - N) / N);
+    const cellByH = Math.floor((availH - N) / N);
+    const cs = Math.max(14, Math.min(cellByW, cellByH, 42)); // min 14px, max 42px
+    const fs = Math.max(7, Math.floor(cs * 0.38)) + 'px';
+    const labelFs = Math.max(7, Math.floor(cs * 0.32)) + 'px';
+
+    // Column header row
+    const headerRow = document.createElement('div');
+    headerRow.style.cssText = `display:flex; gap:1px; margin-left:${labelW+1}px;`;
+    colNums.forEach(n => {
+      const lbl = document.createElement('div');
+      lbl.style.cssText = `width:${cs}px;height:${Math.round(cs*0.85)}px;display:flex;align-items:center;justify-content:center;font-family:"Bebas Neue",cursive;font-size:${labelFs};color:#E8C96A;background:rgba(201,168,76,0.1);border-radius:2px 2px 0 0;flex-shrink:0;`;
+      lbl.textContent = numbersLocked ? n : '?';
+      headerRow.appendChild(lbl);
+    });
+    grid.appendChild(headerRow);
+
+    // Rows
+    for (let r = 0; r < N; r++) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:1px; align-items:center;';
+
+      // Row label
+      const rl = document.createElement('div');
+      rl.style.cssText = `width:${labelW}px;height:${cs}px;display:flex;align-items:center;justify-content:center;font-family:"Bebas Neue",cursive;font-size:${labelFs};color:#E8C96A;background:rgba(201,168,76,0.1);border-radius:2px 0 0 2px;flex-shrink:0;margin-right:1px;`;
+      rl.textContent = numbersLocked ? `#${rowNums[r]}` : '?';
+      row.appendChild(rl);
+
+      for (let c = 0; c < N; c++) {
+        const cell = document.createElement('div');
+        cell.style.cssText = `width:${cs}px;height:${cs}px;border-radius:2px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:700;font-family:"Bebas Neue",cursive;position:relative;`;
+        const pIdx = board[r][c];
+        const isWinner = winnerCell && winnerCell.row === r && winnerCell.col === c;
+        const isDiag = r === c;
+
+        if (isDiag) {
+          cell.style.background = 'repeating-linear-gradient(45deg,rgba(80,0,0,0.5),rgba(80,0,0,0.5) 3px,rgba(30,0,0,0.6) 3px,rgba(30,0,0,0.6) 6px)';
+          cell.style.border = '1px solid rgba(139,26,47,0.3)';
+          cell.style.cursor = 'not-allowed';
+        } else if (isWinner) {
+          cell.style.background = 'linear-gradient(135deg,#FFD700,#FFA500)';
+          cell.style.border = '1px solid #FFD700';
+          cell.style.fontSize = Math.max(10, cs*0.5)+'px';
+          cell.textContent = '🏆';
+        } else if (pIdx !== null && pIdx !== 'X') {
+          cell.style.background = players[pIdx].color;
+          cell.style.border = `1px solid ${players[pIdx].color}`;
+          const parts = players[pIdx].name.split(' ');
+          cell.textContent = parts.map(p => p[0]).join('').slice(0,2).toUpperCase();
+          cell.style.color = 'rgba(255,255,255,0.9)';
+          const tip = document.createElement('div');
+          tip.className = 'dtip';
+          const rl2 = numbersLocked ? `Horse #${rowNums[r]}` : `Row ${r+1}`;
+          const cl2 = numbersLocked ? `Horse #${colNums[c]}` : `Col ${c+1}`;
+          tip.textContent = `${players[pIdx].name} · ${rl2} × ${cl2}`;
+          cell.appendChild(tip);
+        } else {
+          cell.style.background = 'rgba(255,255,255,0.05)';
+          cell.style.border = '1px solid rgba(255,255,255,0.07)';
+        }
+        row.appendChild(cell);
+      }
+      grid.appendChild(row);
+    }
+  }
+
+  // Re-render display grid on window resize
+  window.addEventListener('resize', () => {
+    if (document.getElementById('displayOverlay').style.display !== 'none') {
+      renderDisplayGrid();
+    }
+  });
+
+  function renderDisplayLegend() {
+    const el = document.getElementById('displayLegend');
+    if (players.length === 0) {
+      el.innerHTML = '<div style="font-size:0.75rem;color:rgba(245,237,214,0.4);font-style:italic;text-align:center;">No players yet</div>';
+      return;
+    }
+    el.innerHTML = players.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 4px;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <div style="width:14px;height:14px;border-radius:3px;background:${p.color};flex-shrink:0;border:1px solid rgba(255,255,255,0.2);"></div>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:#FFFFFF;line-height:1.2;">${p.name}</div>
+          <div style="font-size:10px;color:#C9A84C;">${p.count} squares · $${p.count}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── INIT ───────────────────────────────────────────────────────
+  render();
+</script>
+</body>
+</html>

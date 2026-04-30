@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
+import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
@@ -18,6 +19,7 @@ export default function LeaderboardPage() {
   const [players, setPlayers] = useState<Player[]>([])
   const [scores, setScores] = useState<Score[]>([])
   const [revealedRaces, setRevealedRaces] = useState<Set<string>>(new Set())
+  const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -177,25 +179,95 @@ export default function LeaderboardPage() {
               {/* Rows */}
               {standings.map((row, idx) => {
                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
+                const isExpanded = expandedPlayerId === row.player.id
                 return (
-                  <div
-                    key={row.player.id}
-                    className={`px-3 py-2.5 grid grid-cols-[24px_1fr_56px_30px_30px_30px] gap-2 items-center border-t border-white/10 ${
-                      idx === 0 ? 'bg-[var(--gold)]/10' : ''
-                    }`}
-                  >
-                    <span className="text-white/70 font-bold text-sm">{idx + 1}</span>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <AvatarIcon id={row.player.avatar} className="w-9 h-9 rounded shrink-0" />
-                      <span className="text-white font-semibold truncate">{row.player.name}</span>
-                      {medal && <span className="shrink-0 text-base">{medal}</span>}
-                    </div>
-                    <span className="text-[var(--gold)] font-bold text-lg text-right tabular-nums">
-                      {row.total}
-                    </span>
-                    <span className="text-center text-emerald-400 font-mono text-sm">{row.wins}</span>
-                    <span className="text-center text-amber-300 font-mono text-sm">{row.places}</span>
-                    <span className="text-center text-white/70 font-mono text-sm">{row.shows}</span>
+                  <div key={row.player.id}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPlayerId(prev => prev === row.player.id ? null : row.player.id)}
+                      aria-expanded={isExpanded}
+                      className={`w-full text-left px-3 py-2.5 grid grid-cols-[24px_1fr_56px_30px_30px_30px] gap-2 items-center border-t border-white/10 transition-colors hover:bg-white/[0.07] ${
+                        idx === 0 ? 'bg-[var(--gold)]/10' : ''
+                      } ${isExpanded ? 'bg-white/[0.08]' : ''}`}
+                    >
+                      <span className="text-white/70 font-bold text-sm">{idx + 1}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <AvatarIcon id={row.player.avatar} className="w-9 h-9 rounded shrink-0" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1">
+                            <span className="text-white font-semibold truncate">{row.player.name}</span>
+                            {medal && <span className="shrink-0 text-base">{medal}</span>}
+                          </div>
+                          <span className="text-[10px] text-white/40 font-medium">
+                            {isExpanded ? '▴ hide details' : '▾ details'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[var(--gold)] font-bold text-lg text-right tabular-nums">
+                        {row.total}
+                      </span>
+                      <span className="text-center text-emerald-400 font-mono text-sm">{row.wins}</span>
+                      <span className="text-center text-amber-300 font-mono text-sm">{row.places}</span>
+                      <span className="text-center text-white/70 font-mono text-sm">{row.shows}</span>
+                    </button>
+                    <AnimatePresence initial={false}>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.22, ease: 'easeOut' }}
+                          className="overflow-hidden bg-black/30 border-t border-white/10"
+                        >
+                          <div className="px-4 py-3">
+                            <div className="text-[10px] uppercase tracking-wider text-white/55 font-bold mb-2">
+                              Race-by-race
+                            </div>
+                            <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
+                              {races.map(r => {
+                                const revealed = effectiveRevealed.has(r.id)
+                                const sc = revealed
+                                  ? scores.find(s => s.player_id === row.player.id && s.race_id === r.id)
+                                  : null
+                                const points = sc?.final_points
+                                const hasPoints = typeof points === 'number'
+                                const display = hasPoints
+                                  ? (points > 0 ? `+${points}` : `${points}`)
+                                  : '—'
+                                const positive = hasPoints && points > 0
+                                const zero = hasPoints && points === 0
+                                return (
+                                  <div
+                                    key={r.id}
+                                    title={`Race ${r.race_number}`}
+                                    className={`flex flex-col items-center justify-center rounded-lg py-1.5 text-center border ${
+                                      positive
+                                        ? 'bg-[var(--gold)]/15 border-[var(--gold)]/50'
+                                        : zero
+                                          ? 'bg-white/5 border-white/15'
+                                          : 'bg-white/[0.03] border-white/10'
+                                    }`}
+                                  >
+                                    <span className="text-[10px] text-white/55 font-bold">R{r.race_number}</span>
+                                    <span className={`text-sm font-bold tabular-nums ${
+                                      positive
+                                        ? 'text-[var(--gold)]'
+                                        : zero
+                                          ? 'text-white/60'
+                                          : 'text-white/35'
+                                    }`}>{display}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between">
+                              <span className="text-[11px] text-white/55 uppercase tracking-wider font-bold">Total</span>
+                              <span className="text-[var(--gold)] font-bold text-lg tabular-nums">{row.total}</span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )
               })}

@@ -5,16 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
-import { AvatarIcon, AVATARS } from '@/lib/avatars'
+import { AvatarIcon, useAvatarSampler } from '@/lib/avatars'
 import { parseLocalIso } from '@/lib/time'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
-
-type PickDraft = {
-  win: string | null
-  place: string | null
-  show: string | null
-}
 
 export default function PicksPage() {
   const router = useRouter()
@@ -30,7 +24,7 @@ export default function PicksPage() {
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
-  const [openModalRaceId, setOpenModalRaceId] = useState<string | null>(null)
+  const [infoModalRaceId, setInfoModalRaceId] = useState<string | null>(null)
   const [tokenAssignType, setTokenAssignType] = useState<'2x' | '3x' | null>(null)
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set())
   const [adminAlert, setAdminAlert] = useState<string | null>(null)
@@ -40,6 +34,111 @@ export default function PicksPage() {
   // realtime updates re-fire the effect — once the user has interacted with
   // a card we don't want to undo their toggles.
   const expandInitializedRef = useRef(false)
+
+  // Toasts + nudges
+  const [picksSavedToast, setPicksSavedToast] = useState(false)
+  const [lockedToasts, setLockedToasts] = useState<{ id: string; raceNumber: number }[]>([])
+  const [allPicksNudgeOpen, setAllPicksNudgeOpen] = useState(false)
+  // Picks ref: realtime callbacks need to read picks without going stale.
+  const picksRef = useRef<Pick[]>([])
+  useEffect(() => { picksRef.current = picks }, [picks])
+
+  // ----- First-run tutorial tour -----
+  const [tourActive, setTourActive] = useState(false)
+  const [tourStepIdx, setTourStepIdx] = useState(0)
+  const tourAutoStartedRef = useRef(false)
+
+  const tourSteps = useMemo(() => {
+    const featuredRaceExists = races.some(r => r.is_featured)
+    return [
+      {
+        id: 'race-cards',
+        selector: '[data-tour-first]',
+        title: '📋 Your Races',
+        body: 'Each race locks at post time — make your picks before the countdown hits zero! Tap 🏇 Pick Horses to make your selections.',
+        prepare: () => {},
+      },
+      {
+        id: 'pick-button',
+        selector: '[data-tour-first] [data-tour-pick-button]',
+        title: '🏇 Pick Your Horses',
+        body: 'Pick which horse finishes 1st, 2nd, and 3rd. Exact match = 5 / 3 / 2 points. Right horse, wrong spot = 1 point.',
+        prepare: () => {
+          const firstRaceId = races[0]?.id
+          if (firstRaceId) {
+            setExpandedRaces(prev => {
+              if (prev.has(firstRaceId)) return prev
+              const next = new Set(prev)
+              next.add(firstRaceId)
+              return next
+            })
+          }
+        },
+      },
+      {
+        id: 'featured-race',
+        selector: '[data-tour-featured]',
+        title: '⭐ Featured Race = 2X Points!',
+        body: 'This race is worth DOUBLE points. Use your best picks here — it could make or break your leaderboard position.',
+        skip: !featuredRaceExists,
+        prepare: () => {},
+      },
+      {
+        id: 'bonus-tokens',
+        selector: '[data-tour-bonus-tokens]',
+        title: '✨ Bonus Tokens = Multiplied Points',
+        body: 'You get a 3X and a 2X token. Tap a token to assign it to any upcoming race — that race’s points get multiplied! Use them on your most confident picks.',
+        skip: !event?.multiplier_visible,
+        prepare: () => {},
+      },
+      {
+        id: 'live-track',
+        selector: '[data-tour-live-track]',
+        title: '🏁 Watch the Race Live!',
+        body: 'After picking, head to the Live Track to watch everyone’s position update in real time. The leaderboard updates after each race!',
+        prepare: () => {},
+      },
+    ].filter(s => !s.skip)
+  }, [races, event?.multiplier_visible])
+
+  function startTour() {
+    if (tourSteps.length === 0) return
+    setTourStepIdx(0)
+    setTourActive(true)
+    tourSteps[0].prepare?.()
+  }
+
+  function finishTour() {
+    setTourActive(false)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('furlong_tour_seen', 'true')
+    }
+  }
+
+  function nextTourStep() {
+    const next = tourStepIdx + 1
+    if (next >= tourSteps.length) {
+      finishTour()
+      return
+    }
+    tourSteps[next].prepare?.()
+    setTourStepIdx(next)
+  }
+
+  // Auto-start the tour for first-time players once data has loaded.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (loading) return
+    if (tourAutoStartedRef.current) return
+    if (races.length === 0) return
+    if (tourSteps.length === 0) return
+    if (localStorage.getItem('furlong_tour_seen')) return
+    tourAutoStartedRef.current = true
+    setTourStepIdx(0)
+    setTourActive(true)
+    tourSteps[0].prepare?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, races.length, tourSteps.length])
 
   async function loadAll() {
     if (typeof window === 'undefined') return
@@ -153,6 +252,24 @@ export default function PicksPage() {
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'races', filter: `event_id=eq.${event.id}` },
         (payload) => {
+          // Lock detection: if a race transitions INTO 'locked' and the player
+          // hadn't picked it, surface a toast.
+          if (payload.eventType === 'UPDATE') {
+            const newR = payload.new as Race
+            const oldR = payload.old as Partial<Race>
+            if (oldR.status !== 'locked' && newR.status === 'locked') {
+              const hadPick = picksRef.current.some(p =>
+                p.race_id === newR.id && (p.win_horse_id || p.place_horse_id || p.show_horse_id)
+              )
+              if (!hadPick) {
+                const tid = `${newR.id}-${Date.now()}`
+                setLockedToasts(prev => [...prev, { id: tid, raceNumber: newR.race_number }])
+                setTimeout(() => {
+                  setLockedToasts(prev => prev.filter(t => t.id !== tid))
+                }, 3000)
+              }
+            }
+          }
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
             const r = payload.new as Race
             setRaces(prev => {
@@ -249,6 +366,122 @@ export default function PicksPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpandedRaces(defaults)
   }, [loading, races, picks])
+
+  // Auto-dismiss the green "Picks saved!" toast after 2s.
+  useEffect(() => {
+    if (!picksSavedToast) return
+    const t = setTimeout(() => setPicksSavedToast(false), 2000)
+    return () => clearTimeout(t)
+  }, [picksSavedToast])
+
+  // Race tab strip: refs to each race card + active race tracker via IntersectionObserver.
+  const raceCardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+  const tabStripRef = useRef<HTMLDivElement>(null)
+  const tabScrollerRef = useRef<HTMLDivElement>(null)
+  const [activeRaceId, setActiveRaceId] = useState<string | null>(null)
+  const [showLeftFade, setShowLeftFade] = useState(false)
+  const [showRightFade, setShowRightFade] = useState(false)
+
+  useEffect(() => {
+    if (races.length === 0) return
+    const observer = new IntersectionObserver(
+      entries => {
+        const visible = entries.filter(e => e.isIntersecting)
+        if (visible.length === 0) return
+        visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        const top = visible[0]
+        const id = top.target.getAttribute('data-race-id')
+        if (id) setActiveRaceId(id)
+      },
+      { rootMargin: '-80px 0px -60% 0px', threshold: 0 }
+    )
+    raceCardRefs.current.forEach(el => observer.observe(el))
+    return () => observer.disconnect()
+  }, [races])
+
+  // Keep the active tab visible inside the horizontally scrolling strip.
+  useEffect(() => {
+    if (!activeRaceId) return
+    const tab = tabRefs.current.get(activeRaceId)
+    tab?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [activeRaceId])
+
+  function scrollToRace(raceId: string) {
+    const el = raceCardRefs.current.get(raceId)
+    if (!el) return
+    const stripHeight = tabStripRef.current?.offsetHeight ?? 0
+    const cardTop = el.getBoundingClientRect().top + window.scrollY
+    window.scrollTo({ top: cardTop - stripHeight - 12, behavior: 'smooth' })
+  }
+
+  // Track scroll position of the tab strip to drive fade indicators + arrow visibility.
+  useEffect(() => {
+    const el = tabScrollerRef.current
+    if (!el) return
+    const update = () => {
+      const left = el.scrollLeft > 4
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4
+      // eslint-disable-next-line no-console
+      console.log('[tabs]', {
+        scrollLeft: el.scrollLeft,
+        clientWidth: el.clientWidth,
+        scrollWidth: el.scrollWidth,
+        racesCount: races.length,
+        showLeftFade: left,
+        showRightFade: right,
+      })
+      setShowLeftFade(left)
+      setShowRightFade(right)
+    }
+    // Optimistic bias: with many races we almost certainly overflow on every
+    // viewport, so show the right arrow immediately. Real measurements below
+    // override this once layout has settled.
+    if (races.length > 8) setShowRightFade(true)
+    update()
+    const t1 = setTimeout(update, 100)
+    const t2 = setTimeout(update, 300)
+    el.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      el.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [races.length])
+
+  function scrollStripBy(direction: 'left' | 'right') {
+    const el = tabScrollerRef.current
+    if (!el || races.length === 0) return
+    const tabAvgWidth = el.scrollWidth / races.length
+    const delta = tabAvgWidth * 3 * (direction === 'left' ? -1 : 1)
+    el.scrollBy({ left: delta, behavior: 'smooth' })
+  }
+
+  // Once all races have picks, prompt the player to head to /track.
+  // sessionStorage flag prevents re-showing within the same browser session.
+  const allPicksIn = useMemo(() => {
+    if (races.length === 0) return false
+    return races.every(r => picks.some(p =>
+      p.race_id === r.id && (p.win_horse_id || p.place_horse_id || p.show_horse_id)
+    ))
+  }, [races, picks])
+
+  useEffect(() => {
+    if (!event || !allPicksIn) return
+    if (typeof window === 'undefined') return
+    const key = `furlong_all_picks_nudge_${event.id}`
+    if (sessionStorage.getItem(key) === 'dismissed') return
+    setAllPicksNudgeOpen(true)
+  }, [allPicksIn, event])
+
+  function dismissAllPicksNudge() {
+    if (event && typeof window !== 'undefined') {
+      sessionStorage.setItem(`furlong_all_picks_nudge_${event.id}`, 'dismissed')
+    }
+    setAllPicksNudgeOpen(false)
+  }
 
   // Effective revealed set: in auto mode, every race is implicitly revealed;
   // in manual mode, only those broadcast by admin (or already in `revealedRaces`).
@@ -366,12 +599,36 @@ export default function PicksPage() {
             </motion.div>
           )
         })}
+        {lockedToasts.map(t => (
+          <motion.div
+            key={`lock-${t.id}`}
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            transition={{ type: 'spring', damping: 24, stiffness: 260 }}
+            className="sticky top-0 z-30 bg-[var(--rose-dark)]/95 text-white px-4 py-3 shadow-lg border-b-2 border-[var(--gold)]/40"
+          >
+            <span className="font-semibold text-sm">
+              🔒 Race {t.raceNumber} just locked! No more changes.
+            </span>
+          </motion.div>
+        ))}
       </AnimatePresence>
 
       {/* Player Hero */}
       <section className="px-5 pt-6 pb-4">
         <div className="max-w-2xl mx-auto bg-gradient-to-br from-[var(--rose-dark)] to-[#5a0f1d] rounded-2xl p-5 border-2 border-[var(--gold)]/40 shadow-lg relative overflow-hidden">
           <div className="absolute -top-8 -right-8 text-9xl opacity-10">🌹</div>
+          <button
+            type="button"
+            onClick={startTour}
+            title="How to Play"
+            aria-label="How to play"
+            className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[var(--gold)]/15 border border-[var(--gold)]/60 text-[var(--gold)] hover:bg-[var(--gold)]/25 text-xs font-bold"
+          >
+            <span aria-hidden>?</span>
+            <span className="hidden sm:inline">How to Play</span>
+          </button>
           <div className="flex items-start gap-4 relative">
             <button
               type="button"
@@ -424,7 +681,7 @@ export default function PicksPage() {
 
       {/* Multiplier Tokens */}
       {event.multiplier_visible && (
-        <section className="px-5 pb-4">
+        <section className="px-5 pb-4" data-tour-bonus-tokens="true">
           <div className="max-w-2xl mx-auto">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[var(--gold)] text-sm uppercase tracking-wider font-bold flex items-center gap-2">
@@ -477,46 +734,160 @@ export default function PicksPage() {
               No races posted yet. The host will set them up before post time.
             </div>
           ) : (
-            <div className="space-y-3">
-              {races.map(race => (
-                <RaceCard
+            <>
+              {/* Race progress indicator */}
+              {(() => {
+                const finishedCount = races.filter(r => r.status === 'finished').length
+                return (
+                  <div className="mb-3 px-1">
+                    <div className="flex items-center justify-between text-[11px] text-white/65 mb-1.5">
+                      <span className="uppercase tracking-wider font-bold text-white/55">Day Progress</span>
+                      <span className="font-semibold tabular-nums">
+                        Race {finishedCount} of {races.length} complete
+                      </span>
+                    </div>
+                    <div className="flex gap-1 h-2">
+                      {races.map(r => (
+                        <div
+                          key={r.id}
+                          title={`Race ${r.race_number} — ${r.status}`}
+                          className={`flex-1 rounded-full ${
+                            r.status === 'finished'
+                              ? 'bg-[var(--gold)]'
+                              : r.status === 'locked'
+                                ? 'bg-[var(--rose-dark)]'
+                                : 'bg-white/10'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Race tab strip — sticky horizontal nav with fade indicators + desktop arrows */}
+              <div
+                ref={tabStripRef}
+                className="sticky top-0 z-10 -mx-2 mb-3 bg-[var(--dark)]/95 backdrop-blur-sm border-b border-white/10 rounded-b-lg"
+              >
+                <div className="relative">
+                  {/* Left fade */}
+                  <div
+                    className={`pointer-events-none absolute left-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-r from-[var(--dark)] via-[var(--dark)]/80 to-transparent transition-opacity duration-200 ${showLeftFade ? 'opacity-100' : 'opacity-0'}`}
+                  />
+                  {/* Right fade */}
+                  <div
+                    className={`pointer-events-none absolute right-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-l from-[var(--dark)] via-[var(--dark)]/80 to-transparent transition-opacity duration-200 ${showRightFade ? 'opacity-100' : 'opacity-0'}`}
+                  />
+                  {/* Left arrow */}
+                  {showLeftFade && (
+                    <button
+                      type="button"
+                      onClick={() => scrollStripBy('left')}
+                      aria-label="Scroll tabs left"
+                      className="flex absolute left-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--dark)] shadow-lg text-lg font-bold leading-none hover:bg-[var(--gold)] transition-colors"
+                    >
+                      ‹
+                    </button>
+                  )}
+                  {/* Right arrow */}
+                  {showRightFade && (
+                    <button
+                      type="button"
+                      onClick={() => scrollStripBy('right')}
+                      aria-label="Scroll tabs right"
+                      className="flex absolute right-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--dark)] shadow-lg text-lg font-bold leading-none hover:bg-[var(--gold)] transition-colors"
+                    >
+                      ›
+                    </button>
+                  )}
+                  <div
+                    ref={tabScrollerRef}
+                    className="flex gap-2 overflow-x-scroll px-12 py-2 [&::-webkit-scrollbar]:hidden"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
+                  >
+                    {races.map(r => {
+                      const active = r.id === activeRaceId
+                      const finished = r.status === 'finished'
+                      const locked = r.status === 'locked'
+                      const icon = finished ? '✅' : locked ? '🔒' : null
+                      const stateClass = active
+                        ? 'bg-[var(--gold)] text-[var(--dark)] font-bold shadow-md ring-2 ring-[var(--gold)]/40'
+                        : locked
+                          ? 'bg-[var(--rose-dark)]/30 text-rose-100 border border-[var(--rose-dark)]/70 opacity-90'
+                          : finished
+                            ? 'bg-emerald-900/30 text-emerald-200/80 border border-emerald-700/40 opacity-70'
+                            : 'bg-white/5 text-[var(--cream)] border border-white/10 hover:bg-white/10 hover:text-white'
+                      return (
+                        <button
+                          key={r.id}
+                          ref={el => {
+                            if (el) tabRefs.current.set(r.id, el)
+                            else tabRefs.current.delete(r.id)
+                          }}
+                          onClick={() => scrollToRace(r.id)}
+                          className={`flex-shrink-0 px-4 py-2 rounded-full text-base font-semibold whitespace-nowrap transition-colors ${stateClass}`}
+                        >
+                          {icon ? <span className="mr-1">{icon}</span> : null}R{r.race_number}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {races.map((race, idx) => (
+                <div
                   key={race.id}
-                  race={race}
-                  horses={horsesByRace[race.id] ?? []}
-                  pick={picks.find(p => p.race_id === race.id) ?? null}
-                  score={allScores.find(s => s.race_id === race.id && s.player_id === player.id) ?? null}
-                  scoreRevealed={effectiveRevealed.has(race.id)}
-                  multiplier={
-                    player.multiplier_3x_race_id === race.id ? '3x' :
-                    player.multiplier_2x_race_id === race.id ? '2x' : null
-                  }
-                  multiplierVisible={event.multiplier_visible}
-                  now={now}
-                  expanded={expandedRaces.has(race.id)}
-                  onToggle={() => setExpandedRaces(prev => {
-                    const next = new Set(prev)
-                    if (next.has(race.id)) next.delete(race.id)
-                    else next.add(race.id)
-                    return next
-                  })}
-                  onPick={() => setOpenModalRaceId(race.id)}
-                />
+                  data-race-id={race.id}
+                  data-tour-first={idx === 0 ? 'true' : undefined}
+                  data-tour-featured={race.is_featured ? 'true' : undefined}
+                  ref={el => {
+                    if (el) raceCardRefs.current.set(race.id, el)
+                    else raceCardRefs.current.delete(race.id)
+                  }}
+                >
+                  <RaceCard
+                    race={race}
+                    horses={horsesByRace[race.id] ?? []}
+                    pick={picks.find(p => p.race_id === race.id) ?? null}
+                    score={allScores.find(s => s.race_id === race.id && s.player_id === player.id) ?? null}
+                    scoreRevealed={effectiveRevealed.has(race.id)}
+                    multiplier={
+                      player.multiplier_3x_race_id === race.id ? '3x' :
+                      player.multiplier_2x_race_id === race.id ? '2x' : null
+                    }
+                    multiplierVisible={event.multiplier_visible}
+                    now={now}
+                    expanded={expandedRaces.has(race.id)}
+                    onToggle={() => setExpandedRaces(prev => {
+                      const next = new Set(prev)
+                      if (next.has(race.id)) next.delete(race.id)
+                      else next.add(race.id)
+                      return next
+                    })}
+                    onOpenRaceInfo={() => setInfoModalRaceId(race.id)}
+                  />
+                </div>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </div>
       </section>
 
-      {/* Picks Modal */}
+      {/* Race Info Modal */}
       <AnimatePresence>
-        {openModalRaceId && (
-          <PicksModal
-            race={races.find(r => r.id === openModalRaceId)!}
-            horses={horsesByRace[openModalRaceId] ?? []}
-            existingPick={picks.find(p => p.race_id === openModalRaceId) ?? null}
+        {infoModalRaceId && (
+          <RaceInfoModal
+            race={races.find(r => r.id === infoModalRaceId)!}
+            horses={horsesByRace[infoModalRaceId] ?? []}
+            existingPick={picks.find(p => p.race_id === infoModalRaceId) ?? null}
             playerId={player.id}
             eventId={event.id}
-            onClose={() => setOpenModalRaceId(null)}
+            onSaved={() => setPicksSavedToast(true)}
+            onClose={() => setInfoModalRaceId(null)}
           />
         )}
       </AnimatePresence>
@@ -567,13 +938,59 @@ export default function PicksPage() {
         <WatchPartyBadge />
       </div>
 
+      {/* "Picks saved!" toast (bottom center) */}
+      <AnimatePresence>
+        {picksSavedToast && (
+          <motion.div
+            key="picks-saved"
+            initial={{ y: 60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 20, opacity: 0 }}
+            transition={{ type: 'spring', damping: 22, stiffness: 280 }}
+            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 bg-emerald-500 text-white font-bold px-5 py-3 rounded-full shadow-lg flex items-center gap-2 pointer-events-none"
+          >
+            <span>✅</span>
+            <span>Picks saved!</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* All-picks-in nudge (above bottom nav) */}
+      <AnimatePresence>
+        {allPicksNudgeOpen && (
+          <motion.div
+            key="all-picks-nudge"
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ type: 'spring', damping: 24, stiffness: 240 }}
+            className="fixed bottom-14 left-0 right-0 z-20 px-3 pb-2"
+          >
+            <div className="max-w-2xl mx-auto bg-gradient-to-r from-[var(--gold)] to-[#E8C96A] text-[var(--dark)] rounded-xl px-4 py-3 shadow-lg flex items-center justify-between gap-3 border-2 border-[var(--gold)]/80">
+              <Link
+                href="/track"
+                onClick={dismissAllPicksNudge}
+                className="flex-1 font-bold flex items-center gap-2"
+              >
+                🏇 All picks in! Watch the race live →
+              </Link>
+              <button
+                onClick={dismissAllPicksNudge}
+                aria-label="Dismiss"
+                className="text-[var(--dark)]/80 hover:text-[var(--dark)] font-bold text-lg leading-none px-2"
+              >✕</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 bg-[var(--dark)]/95 border-t border-white/10 backdrop-blur-sm z-10">
         <div className="max-w-2xl mx-auto flex">
           <Link href="/" className="flex-1 py-3 text-center text-white/60 hover:text-white text-sm">
             🏠 Home
           </Link>
-          <Link href="/track" className="flex-1 py-3 text-center text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold">
+          <Link href="/track" data-tour-live-track="true" className="flex-1 py-3 text-center text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold">
             🏁 Live Track
           </Link>
           <Link href="/leaderboard" className="flex-1 py-3 text-center text-white/60 hover:text-white text-sm">
@@ -581,6 +998,23 @@ export default function PicksPage() {
           </Link>
         </div>
       </nav>
+
+      {/* First-run tutorial tour */}
+      <AnimatePresence>
+        {tourActive && tourSteps[tourStepIdx] && (
+          <TourOverlay
+            key={tourSteps[tourStepIdx].id}
+            stepIndex={tourStepIdx}
+            totalSteps={tourSteps.length}
+            selector={tourSteps[tourStepIdx].selector}
+            title={tourSteps[tourStepIdx].title}
+            body={tourSteps[tourStepIdx].body}
+            isLastStep={tourStepIdx === tourSteps.length - 1}
+            onNext={nextTourStep}
+            onSkip={finishTour}
+          />
+        )}
+      </AnimatePresence>
     </main>
   )
 }
@@ -686,7 +1120,7 @@ function TokenCard({
 // ----- RACE CARD -----
 function RaceCard({
   race, horses, pick, score, scoreRevealed, multiplier, multiplierVisible, now,
-  expanded, onToggle, onPick,
+  expanded, onToggle, onOpenRaceInfo,
 }: {
   race: Race
   horses: Horse[]
@@ -698,7 +1132,7 @@ function RaceCard({
   now: number
   expanded: boolean
   onToggle: () => void
-  onPick: () => void
+  onOpenRaceInfo: () => void
 }) {
   const horseById = (id: string | null) => horses.find(h => h.id === id) ?? null
   const winHorse = horses.find(h => h.finish_position === 1)
@@ -915,8 +1349,8 @@ function RaceCard({
                 <div className="text-white/50 text-sm italic">No picks yet</div>
               )}
 
-              {/* Results / Action */}
-              {finished && score ? (
+              {/* Results — only for finished races */}
+              {finished && score && (
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-white/60">
                     🥇 #{winHorse?.number ?? '?'} • 🥈 #{placeHorse?.number ?? '?'} • 🥉 #{showHorse?.number ?? '?'}
@@ -930,21 +1364,35 @@ function RaceCard({
                     </div>
                   </div>
                 </div>
-              ) : finished ? (
+              )}
+              {finished && !score && (
                 <div className="text-white/50 text-sm italic">
                   You didn&apos;t pick this race.
                 </div>
-              ) : (
-                canPick && (
+              )}
+
+              {/* Unified Race Info / Picks button */}
+              {(() => {
+                const noHorses = horses.length === 0
+                const readOnly = race.status === 'locked' || race.status === 'finished'
+                const label = noHorses
+                  ? 'Waiting for horses...'
+                  : readOnly
+                    ? '📋 Race Info'
+                    : hasPicks
+                      ? '✏️ Edit Picks'
+                      : '🏇 Pick Horses'
+                return (
                   <button
-                    onClick={(e) => { e.stopPropagation(); onPick() }}
-                    disabled={horses.length === 0}
+                    onClick={(e) => { e.stopPropagation(); onOpenRaceInfo() }}
+                    disabled={noHorses}
+                    data-tour-pick-button="true"
                     className="w-full h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-base disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
                   >
-                    {horses.length === 0 ? 'Waiting for horses...' : (hasPicks ? 'Edit Picks' : 'Make Picks')}
+                    {label}
                   </button>
                 )
-              )}
+              })()}
             </div>
           </motion.div>
         )}
@@ -953,74 +1401,117 @@ function RaceCard({
   )
 }
 
-// ----- PICKS MODAL -----
-function PicksModal({
-  race, horses, existingPick, playerId, eventId, onClose,
+// ----- RACE INFO MODAL -----
+function oddsToValue(odds: string | null | undefined): number {
+  if (!odds) return Infinity
+  const m = odds.trim().match(/^(\d+(?:\.\d+)?)\s*[\/\-]\s*(\d+(?:\.\d+)?)$/)
+  if (m) {
+    const denom = parseFloat(m[2])
+    if (denom === 0) return Infinity
+    return parseFloat(m[1]) / denom
+  }
+  const n = parseFloat(odds)
+  return isNaN(n) ? Infinity : n
+}
+
+function RaceInfoModal({
+  race, horses, existingPick, playerId, eventId, onSaved, onClose,
 }: {
   race: Race
   horses: Horse[]
   existingPick: Pick | null
   playerId: string
   eventId: string
+  onSaved?: () => void
   onClose: () => void
 }) {
-  const [draft, setDraft] = useState<PickDraft>({
-    win: existingPick?.win_horse_id ?? null,
-    place: existingPick?.place_horse_id ?? null,
-    show: existingPick?.show_horse_id ?? null,
-  })
-  const [activeSlot, setActiveSlot] = useState<'win' | 'place' | 'show'>('win')
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
+  const postTimeLocal = parseLocalIso(race.post_time)
+  // Sort by post position (number) so the program reads in gate order. Scratched
+  // horses stay inline in number order (the user wants them visible with SCR badge).
+  const sorted = [...horses].sort((a, b) => a.number - b.number)
+  const programUrl = `https://www.twinspires.com/bet/program/classic/churchill-downs/cd/Thoroughbred/${race.race_number}/program`
 
-  function selectHorse(horseId: string) {
-    setErr(null)
-    setDraft(d => {
-      const next = { ...d }
-      // Remove from any other slot
-      if (next.win === horseId) next.win = null
-      if (next.place === horseId) next.place = null
-      if (next.show === horseId) next.show = null
-      next[activeSlot] = horseId
-      return next
-    })
-    // Auto-advance
-    if (activeSlot === 'win') setActiveSlot('place')
-    else if (activeSlot === 'place') setActiveSlot('show')
-  }
-
-  async function save() {
-    if (!draft.win || !draft.place || !draft.show) {
-      setErr('Pick a horse for Win, Place, AND Show.')
-      return
+  // Identify the morning-line favorite (lowest odds value) among non-scratched horses.
+  const favoriteId = (() => {
+    let best = Infinity
+    let id: string | null = null
+    for (const h of horses) {
+      if (h.scratched) continue
+      const v = oddsToValue(h.morning_line_odds)
+      if (v < best) {
+        best = v
+        id = h.id
+      }
     }
-    setSaving(true)
+    return best === Infinity ? null : id
+  })()
+
+  const canPick = race.status === 'upcoming' || race.status === 'open'
+  const [pendingHorseId, setPendingHorseId] = useState<string | null>(null)
+
+  async function applyQuickPick(slot: 'win' | 'place' | 'show', horseId: string) {
+    if (!canPick) return
+    setPendingHorseId(horseId)
     try {
+      const cur = {
+        win: existingPick?.win_horse_id ?? null,
+        place: existingPick?.place_horse_id ?? null,
+        show: existingPick?.show_horse_id ?? null,
+      }
+      const isToggle = cur[slot] === horseId
+      // Strip the horse out of any other slot to keep the no-dup invariant.
+      if (cur.win === horseId) cur.win = null
+      if (cur.place === horseId) cur.place = null
+      if (cur.show === horseId) cur.show = null
+      cur[slot] = isToggle ? null : horseId
+
+      const payload = {
+        win_horse_id: cur.win,
+        place_horse_id: cur.place,
+        show_horse_id: cur.show,
+      }
+
       if (existingPick) {
-        await supabase
-          .from('picks')
-          .update({
-            win_horse_id: draft.win,
-            place_horse_id: draft.place,
-            show_horse_id: draft.show,
-          })
-          .eq('id', existingPick.id)
+        await supabase.from('picks').update(payload).eq('id', existingPick.id)
       } else {
         await supabase.from('picks').insert({
           player_id: playerId,
           race_id: race.id,
           event_id: eventId,
-          win_horse_id: draft.win,
-          place_horse_id: draft.place,
-          show_horse_id: draft.show,
+          ...payload,
         })
       }
-      onClose()
+      onSaved?.()
     } catch (e) {
       console.error(e)
-      setErr("Couldn't save your picks. Try again.")
-      setSaving(false)
+    } finally {
+      setPendingHorseId(null)
     }
+  }
+
+  function QuickPickBtn({ slot, horseId, label }: { slot: 'win' | 'place' | 'show'; horseId: string; label: string }) {
+    const cur = slot === 'win'
+      ? existingPick?.win_horse_id
+      : slot === 'place'
+        ? existingPick?.place_horse_id
+        : existingPick?.show_horse_id
+    const active = cur === horseId
+    const disabled = !canPick || pendingHorseId === horseId
+    return (
+      <button
+        type="button"
+        onClick={() => applyQuickPick(slot, horseId)}
+        disabled={disabled}
+        aria-label={`Pick #${horseId} for ${slot}`}
+        className={`shrink-0 h-8 w-10 rounded-md text-[11px] font-bold uppercase tracking-wide transition-colors ${
+          active
+            ? 'bg-[var(--gold)] text-[var(--dark)] shadow-md'
+            : 'bg-white/5 text-white/65 border border-white/15 hover:bg-white/10 hover:text-white'
+        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+      >
+        {label}
+      </button>
+    )
   }
 
   return (
@@ -1041,106 +1532,114 @@ function PicksModal({
       >
         {/* Header */}
         <div className="px-5 pt-4 pb-3 border-b border-white/10">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[var(--gold)]/80 text-xs uppercase font-bold">Race {race.race_number}</span>
-            <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none">✕</button>
-          </div>
-          <h3 className="font-serif text-xl font-bold text-white">{race.name || `Race ${race.race_number}`}</h3>
-        </div>
-
-        {/* Slot tabs */}
-        <div className="grid grid-cols-3 gap-2 p-3 border-b border-white/10">
-          {(['win', 'place', 'show'] as const).map(slot => {
-            const horseId = draft[slot]
-            const horse = horses.find(h => h.id === horseId)
-            const active = activeSlot === slot
-            return (
-              <button
-                key={slot}
-                onClick={() => setActiveSlot(slot)}
-                className={`rounded-lg border-2 p-2 text-center transition-all min-h-[60px] ${active ? 'border-[var(--gold)] bg-[var(--gold)]/10' : 'border-white/20 hover:border-white/40'}`}
-              >
-                <div className="text-[10px] font-bold uppercase tracking-wider text-white/60">
-                  {slot === 'win' ? '1st • Win' : slot === 'place' ? '2nd • Place' : '3rd • Show'}
-                </div>
-                {horse ? (
-                  <div className="mt-0.5">
-                    <div className="text-white font-bold text-sm">#{horse.number}</div>
-                    <div className="text-white/70 text-[10px] truncate">{horse.name}</div>
-                  </div>
-                ) : (
-                  <div className="text-white/40 text-xs mt-1">Tap to set</div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[var(--gold)]/80 text-xs uppercase font-bold tracking-wider">
+                Race {race.race_number}
+                {race.is_featured && (
+                  <span className="ml-2 text-[var(--gold)]">⭐ {race.featured_multiplier}X POINTS</span>
                 )}
-              </button>
-            )
-          })}
+              </div>
+              <h3 className="font-serif text-xl font-bold text-white mt-0.5 leading-tight">
+                {race.name || `Race ${race.race_number}`}
+              </h3>
+              <div className="text-white/50 text-xs mt-1 flex items-center gap-2 flex-wrap">
+                {race.distance && <span>{race.distance}</span>}
+                {postTimeLocal && (
+                  <span>
+                    {postTimeLocal.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  </span>
+                )}
+                <span>· {sorted.filter(h => !h.scratched).length} {sorted.filter(h => !h.scratched).length === 1 ? 'horse' : 'horses'}</span>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="shrink-0 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none flex items-center justify-center transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+          {canPick && (
+            <p className="mt-2 text-[11px] text-white/45">
+              Tap <span className="text-[var(--gold)]/80 font-semibold">1st / 2nd / 3rd</span> to set Win, Place, Show — picks save instantly.
+            </p>
+          )}
         </div>
 
         {/* Horse list */}
-        <div className="flex-1 overflow-y-auto p-3">
-          {horses.length === 0 ? (
-            <div className="text-white/50 text-center py-8">No horses listed for this race yet.</div>
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          {sorted.length === 0 ? (
+            <div className="text-white/50 text-sm italic px-4 py-6 text-center">
+              No horses listed yet.
+            </div>
           ) : (
-            <div className="space-y-2">
-              {horses.map(h => {
-                const used =
-                  draft.win === h.id ? 'WIN' :
-                  draft.place === h.id ? 'PLACE' :
-                  draft.show === h.id ? 'SHOW' : null
-                const usedInActive = draft[activeSlot] === h.id
+            <ul className="divide-y divide-white/5">
+              {sorted.map((h, i) => {
+                const stripe = i % 2 === 1 ? 'bg-white/[0.03]' : ''
+                const isFavorite = !h.scratched && h.id === favoriteId
+                const rowBg = isFavorite ? 'bg-[var(--gold)]/[0.08]' : stripe
                 return (
-                  <button
+                  <li
                     key={h.id}
-                    onClick={() => !h.scratched && selectHorse(h.id)}
-                    disabled={h.scratched}
-                    className={`
-                      w-full text-left p-3 rounded-xl border-2 transition-all flex items-center justify-between min-h-[56px]
-                      ${h.scratched ? 'border-white/5 bg-white/[0.02] opacity-40' :
-                        usedInActive ? 'border-[var(--gold)] bg-[var(--gold)]/15' :
-                        used ? 'border-white/30 bg-white/10' :
-                        'border-white/15 bg-white/5 hover:border-white/40'}
-                    `}
+                    className={`flex items-center gap-2 px-3 py-2.5 ${rowBg}`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 flex items-center justify-center font-bold text-white shrink-0">
-                        {h.number}
-                      </div>
-                      <div className="min-w-0">
-                        <div className={`font-semibold truncate ${h.scratched ? 'line-through' : 'text-white'}`}>
-                          {h.name}
-                        </div>
-                        {h.morning_line_odds && (
-                          <div className="text-white/50 text-xs">{h.morning_line_odds}</div>
+                    <span className={`inline-flex items-center justify-center w-9 h-9 rounded-full font-bold text-sm tabular-nums shrink-0 ${
+                      h.scratched
+                        ? 'bg-white/5 text-white/30 border border-white/10'
+                        : isFavorite
+                          ? 'bg-[var(--gold)]/30 text-[var(--gold)] border-2 border-[var(--gold)]/70'
+                          : 'bg-[var(--gold)]/10 text-[var(--gold)] border-2 border-[var(--gold)]/40'
+                    }`}>
+                      {h.number}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-medium flex items-center gap-1.5 ${
+                        h.scratched ? 'text-white/40 line-through' : 'text-white'
+                      }`}>
+                        <span className="truncate">{h.name}</span>
+                        {h.scratched && (
+                          <span className="shrink-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded leading-none no-underline">
+                            SCR
+                          </span>
+                        )}
+                        {isFavorite && (
+                          <span className="shrink-0 text-[10px] text-[var(--gold)] font-bold uppercase tracking-wide">
+                            Fav
+                          </span>
                         )}
                       </div>
                     </div>
-                    {used && (
-                      <span className="text-[10px] font-bold bg-[var(--gold)]/20 text-[var(--gold)] px-2 py-0.5 rounded-full border border-[var(--gold)]/40">
-                        {used}
-                      </span>
+                    <span className={`w-12 text-right text-sm font-mono tabular-nums shrink-0 ${
+                      h.scratched ? 'text-white/30 line-through' : 'text-white/70'
+                    }`}>
+                      {h.morning_line_odds || '—'}
+                    </span>
+                    {!h.scratched && (
+                      <div className="flex gap-1 shrink-0">
+                        <QuickPickBtn slot="win" horseId={h.id} label="1st" />
+                        <QuickPickBtn slot="place" horseId={h.id} label="2nd" />
+                        <QuickPickBtn slot="show" horseId={h.id} label="3rd" />
+                      </div>
                     )}
-                    {h.scratched && (
-                      <span className="text-[10px] text-red-400 font-bold uppercase">Scratched</span>
-                    )}
-                  </button>
+                  </li>
                 )
               })}
-            </div>
+            </ul>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-white/10 bg-black/40">
-          {err && (
-            <p className="text-red-300 text-sm text-center mb-2">{err}</p>
-          )}
-          <button
-            onClick={save}
-            disabled={saving || !draft.win || !draft.place || !draft.show}
-            className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-lg disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+        {/* Footer — TwinSpires link */}
+        <div className="px-5 py-4 border-t border-white/10 bg-black/30">
+          <a
+            href={programUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full h-12 leading-[3rem] rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-center hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
           >
-            {saving ? 'Saving…' : '🏁 Lock In Picks'}
-          </button>
+            View full program on TwinSpires ↗
+          </a>
         </div>
       </motion.div>
     </motion.div>
@@ -1211,6 +1710,177 @@ function TokenAssignModal({
   )
 }
 
+// ----- TOUR OVERLAY -----
+function TourOverlay({
+  stepIndex, totalSteps, selector, title, body, isLastStep, onNext, onSkip,
+}: {
+  stepIndex: number
+  totalSteps: number
+  selector: string
+  title: string
+  body: string
+  isLastStep: boolean
+  onNext: () => void
+  onSkip: () => void
+}) {
+  const [target, setTarget] = useState<HTMLElement | null>(null)
+  const [, setTick] = useState(0)
+
+  // Find the target on mount + on selector change. Re-query a few times so
+  // freshly-rendered elements (e.g. a card we just expanded) get picked up.
+  useEffect(() => {
+    let cancelled = false
+    const find = () => {
+      if (cancelled) return
+      const el = document.querySelector(selector) as HTMLElement | null
+      setTarget(el)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    find()
+    const t1 = setTimeout(find, 80)
+    const t2 = setTimeout(find, 240)
+    const t3 = setTimeout(() => setTick(t => t + 1), 600) // re-measure after smooth scroll settles
+    return () => {
+      cancelled = true
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+    }
+  }, [selector])
+
+  // Re-render on scroll/resize so the spotlight tracks the target as the page moves.
+  useEffect(() => {
+    const handler = () => setTick(t => t + 1)
+    window.addEventListener('scroll', handler, { passive: true })
+    window.addEventListener('resize', handler)
+    return () => {
+      window.removeEventListener('scroll', handler)
+      window.removeEventListener('resize', handler)
+    }
+  }, [])
+
+  if (!target) {
+    // Fallback while we haven't found the target yet — render a click-blocker
+    // so users can't accidentally interact with the page during the (very brief)
+    // gap between step transitions.
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[99] bg-black/70"
+      />
+    )
+  }
+
+  const rect = target.getBoundingClientRect()
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 0
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 0
+
+  // Tooltip placement.
+  const tooltipWidth = Math.min(360, vw - 32)
+  const tooltipHeightEstimate = 220
+  const margin = 22
+  const spaceBelow = vh - rect.bottom
+  const spaceAbove = rect.top
+  const placeBelow = spaceBelow >= tooltipHeightEstimate + margin || spaceBelow > spaceAbove
+
+  const tooltipTop = placeBelow
+    ? Math.min(rect.bottom + margin, vh - tooltipHeightEstimate - margin)
+    : Math.max(margin, rect.top - margin - tooltipHeightEstimate)
+
+  const tooltipLeft = Math.max(
+    16,
+    Math.min(vw - tooltipWidth - 16, rect.left + rect.width / 2 - tooltipWidth / 2)
+  )
+
+  return (
+    <>
+      {/* Click-blocker behind the spotlight + tooltip. Captures any clicks that
+          would otherwise reach the dimmed area of the page. */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[99]"
+        onClick={onSkip}
+      />
+
+      {/* Spotlight: 9999px shroud + gold ring + pulsing glow, all in one box-shadow.
+          pointer-events:none so the underlying click-blocker still catches clicks
+          on the highlighted area. */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.92 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ type: 'spring', damping: 22, stiffness: 260 }}
+        className="tour-spotlight"
+        style={{
+          position: 'fixed',
+          top: rect.top - 8,
+          left: rect.left - 8,
+          width: rect.width + 16,
+          height: rect.height + 16,
+          borderRadius: 14,
+          pointerEvents: 'none',
+          zIndex: 100,
+        }}
+      />
+
+      {/* Tooltip card */}
+      <motion.div
+        initial={{ opacity: 0, y: placeBelow ? -10 : 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.22, ease: 'easeOut' }}
+        className="fixed z-[101]"
+        style={{
+          top: tooltipTop,
+          left: tooltipLeft,
+          width: tooltipWidth,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Animated arrow pointing at the target */}
+        <div
+          aria-hidden
+          className={`absolute left-1/2 -translate-x-1/2 ${placeBelow ? '-top-8' : '-bottom-8'} text-3xl text-[var(--gold)] animate-bounce select-none drop-shadow-[0_0_8px_rgba(201,168,76,0.6)]`}
+        >
+          {placeBelow ? '↑' : '↓'}
+        </div>
+
+        <div className="bg-[var(--dark)] border-2 border-[var(--gold)]/60 rounded-2xl p-5 shadow-2xl shadow-[var(--gold)]/20">
+          <div className="text-[10px] text-[var(--gold)]/70 font-bold uppercase tracking-wider mb-1">
+            Step {stepIndex + 1} of {totalSteps}
+          </div>
+          <h3 className="font-serif text-xl text-white font-bold mb-2 leading-tight">
+            {title}
+          </h3>
+          <p className="text-white/75 text-sm leading-relaxed mb-4">
+            {body}
+          </p>
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={onSkip}
+              className="text-white/55 hover:text-white text-sm font-semibold underline-offset-2 hover:underline"
+            >
+              Skip Tour
+            </button>
+            <button
+              type="button"
+              onClick={onNext}
+              className="px-5 h-10 rounded-full bg-[var(--gold)] text-[var(--dark)] font-bold text-sm shadow-md hover:bg-[var(--gold)]/90 active:scale-[0.97] transition-all"
+            >
+              {isLastStep ? 'Got it! 🏇' : 'Next →'}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </>
+  )
+}
+
 // ----- CHANGE AVATAR MODAL -----
 function ChangeAvatarModal({
   player, takenAvatars, onPick, onClose,
@@ -1221,6 +1891,7 @@ function ChangeAvatarModal({
   onClose: () => void
 }) {
   const [pending, setPending] = useState<string | null>(null)
+  const sampler = useAvatarSampler({ currentId: player.avatar })
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -1242,7 +1913,7 @@ function ChangeAvatarModal({
             Tap a new avatar to switch. Grayed-out avatars are taken by other players.
           </p>
           <div className="grid grid-cols-5 gap-2">
-            {AVATARS.map(av => {
+            {sampler.visible.map(av => {
               const taken = takenAvatars.includes(av.id) // doesn't include current player
               const isCurrent = av.id === player.avatar
               const isPending = pending === av.id
@@ -1257,7 +1928,7 @@ function ChangeAvatarModal({
                   }}
                   title={taken ? 'Taken' : av.label}
                   className={`
-                    relative aspect-square flex items-center justify-center rounded-xl border-2 transition-all min-h-[48px]
+                    relative aspect-square flex items-center justify-center rounded-xl border-2 transition-all min-h-[64px]
                     ${isCurrent
                       ? 'border-[var(--gold)] bg-[var(--gold)]/20'
                       : taken
@@ -1273,6 +1944,38 @@ function ChangeAvatarModal({
                 </button>
               )
             })}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 mt-3 px-1">
+            {!sampler.expanded ? (
+              <>
+                <button
+                  type="button"
+                  onClick={sampler.shuffle}
+                  className="text-sm text-white/70 hover:text-white font-medium"
+                >
+                  🔀 Shuffle
+                </button>
+                <button
+                  type="button"
+                  onClick={sampler.expand}
+                  className="text-sm text-[var(--gold)] hover:text-[var(--gold)]/80 font-medium"
+                >
+                  See all {sampler.total} →
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-sm text-white/50">Showing all {sampler.total}</span>
+                <button
+                  type="button"
+                  onClick={sampler.collapse}
+                  className="text-sm text-white/70 hover:text-white font-medium"
+                >
+                  Show fewer
+                </button>
+              </>
+            )}
           </div>
         </div>
       </motion.div>

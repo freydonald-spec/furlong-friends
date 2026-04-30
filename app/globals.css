@@ -66,3 +66,23 @@ body {
   background: var(--dark);
   color: #FFFFFF;
 }
+
+/* First-run tour spotlight — gold ring with pulsing glow + 9999px shroud
+   to dim everything outside the highlighted target. */
+@keyframes tourSpotlightPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.78),
+      0 0 0 3px rgba(201, 168, 76, 1),
+      0 0 24px 4px rgba(201, 168, 76, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.78),
+      0 0 0 3px rgba(201, 168, 76, 1),
+      0 0 44px 12px rgba(201, 168, 76, 0.85);
+  }
+}
+.tour-spotlight {
+  animation: tourSpotlightPulse 1.8s ease-in-out infinite;
+}

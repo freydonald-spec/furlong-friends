@@ -19,7 +19,8 @@
       "Read(//tmp/**)",
       "Bash(grep -ric \"router\\\\|useRouter\\\\|\\\\\\\\.query\" \"C:/VSCode-projects/furlong/app/csv-builder/page.tsx\")",
       "Bash(netstat -ano)",
-      "Bash(npx ts-node *)"
+      "Bash(npx ts-node *)",
+      "Bash(echo \"EXITCODE=$?\")"
     ]
   }
 }
