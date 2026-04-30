@@ -1429,7 +1429,6 @@ function RaceInfoModal({
   // Sort by post position (number) so the program reads in gate order. Scratched
   // horses stay inline in number order (the user wants them visible with SCR badge).
   const sorted = [...horses].sort((a, b) => a.number - b.number)
-  const programUrl = `https://www.twinspires.com/bet/program/classic/churchill-downs/cd/Thoroughbred/${race.race_number}/program`
 
   // Identify the morning-line favorite (lowest odds value) among non-scratched horses.
   const favoriteId = (() => {
@@ -1628,18 +1627,6 @@ function RaceInfoModal({
               })}
             </ul>
           )}
-        </div>
-
-        {/* Footer — TwinSpires link */}
-        <div className="px-5 py-4 border-t border-white/10 bg-black/30">
-          <a
-            href={programUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block w-full h-12 leading-[3rem] rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-center hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
-          >
-            View full program on TwinSpires ↗
-          </a>
         </div>
       </motion.div>
     </motion.div>

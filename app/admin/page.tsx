@@ -173,6 +173,14 @@ export default function AdminPage() {
   // this 1s tick just makes the lock feel instant when the admin is watching.
   // `autoLockedRef` prevents us from re-firing the same update while waiting
   // for the realtime subscription to echo the new status back.
+  //
+  // TIMEZONE: post_time is stored as a naive ISO wall-clock string anchored to
+  // America/New_York (see lib/time.ts). parseLocalIso() builds a Date using the
+  // browser's local fields, and `now` is the current local instant — so this
+  // comparison is correct as long as the admin is browsing from Eastern time
+  // (which we assume on Derby Day). The pg_cron job in
+  // scripts/auto-lock-races-cron.sql does the equivalent comparison server-side
+  // for non-Eastern admins and times when no admin tab is open.
   useEffect(() => {
     if (!authed || !event) return
     const overdue = races.filter(r => {
@@ -462,7 +470,7 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2 items-end">
         <Toggle
           label="Multiplier tokens visible to players"
           value={!!draft.multiplier_visible}
@@ -2006,15 +2014,28 @@ function Field({ label, children, inline }: { label: string; children: React.Rea
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex items-center justify-between gap-3 p-3 rounded-lg border-2 border-white/20 bg-white/5 cursor-pointer">
-      <span className="text-white text-sm">{label}</span>
-      <button
-        type="button"
-        onClick={() => onChange(!value)}
-        className={`relative w-12 h-7 rounded-full transition-colors ${value ? 'bg-[var(--gold)]' : 'bg-white/20'}`}
-      >
-        <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
-      </button>
-    </label>
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      aria-pressed={value}
+      className={`flex items-center justify-between gap-4 w-full h-12 px-3 rounded-lg border-2 transition-colors text-left ${
+        value
+          ? 'border-[var(--gold)]/60 bg-[var(--gold)]/10 hover:border-[var(--gold)]'
+          : 'border-white/20 bg-white/5 hover:border-white/40'
+      }`}
+    >
+      <span className="text-white text-sm flex-1 min-w-0">{label}</span>
+      <span className="flex items-center gap-2 shrink-0">
+        <span className={`text-[10px] font-bold uppercase tracking-wider ${value ? 'text-[var(--gold)]' : 'text-white/40'}`}>
+          {value ? 'On' : 'Off'}
+        </span>
+        <span
+          aria-hidden
+          className={`relative w-11 h-6 rounded-full transition-colors ${value ? 'bg-[var(--gold)]' : 'bg-white/20'}`}
+        >
+          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+        </span>
+      </span>
+    </button>
   )
 }
