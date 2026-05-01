@@ -362,39 +362,60 @@ function QRCodeModal({ onClose }: { onClose: () => void }) {
   function handlePrint() {
     const sourceSvg = qrWrapRef.current?.querySelector('svg')
     if (!sourceSvg) return
-    // Inline the SVG and force a 320px on-paper size; the SVG itself is
-    // resolution-independent so the print quality is sharp at any output DPI.
+    // Inline the SVG and size it for the 2x2 grid cell. ~280px per QR fits
+    // four cells inside Letter (8.5"×11") with 12mm margins comfortably,
+    // leaving room for the URL caption beneath each. The SVG is vector so
+    // sharpness is independent of the on-paper width we set.
     const svgClone = sourceSvg.cloneNode(true) as SVGElement
-    svgClone.setAttribute('width', '320')
-    svgClone.setAttribute('height', '320')
+    svgClone.setAttribute('width', '280')
+    svgClone.setAttribute('height', '280')
     const svgMarkup = svgClone.outerHTML
+    // Render four identical cells — host can scissor-cut into individual
+    // join cards for tabletop placement.
+    const cells = Array.from({ length: 4 }).map(() => `
+      <div class="cell">
+        <div class="qr">${svgMarkup}</div>
+        <p class="url">${JOIN_URL}</p>
+      </div>
+    `).join('')
 
-    const w = window.open('', 'qr-print', 'width=480,height=640')
+    const w = window.open('', 'qr-print', 'width=816,height=1056')
     if (!w) return
     w.document.write(`<!doctype html>
 <html>
 <head>
-  <title>Furlong & Friends — Join</title>
+  <title>Furlong & Friends — Join QR Codes</title>
   <meta charset="utf-8" />
   <style>
-    @page { margin: 24mm; }
+    @page { size: letter; margin: 12mm; }
     html, body { background: #ffffff; color: #111827; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      min-height: 100vh; margin: 0; padding: 32px; text-align: center;
+      margin: 0; padding: 0;
     }
-    h1 { font-size: 28px; margin: 0 0 8px; font-weight: 800; }
-    p.tag { color: #6b7280; margin: 0 0 32px; font-size: 14px; }
-    .qr { padding: 16px; background: #ffffff; }
-    p.url { font-family: ui-monospace, monospace; font-size: 18px; margin-top: 24px; word-break: break-all; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12mm;
+      padding: 0;
+    }
+    .cell {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center;
+      padding: 6mm 4mm;
+      page-break-inside: avoid;
+    }
+    .qr { background: #ffffff; }
+    .url {
+      font-family: ui-monospace, monospace;
+      font-size: 13px;
+      margin: 8mm 0 0;
+      word-break: break-all;
+    }
   </style>
 </head>
 <body>
-  <h1>Furlong &amp; Friends</h1>
-  <p class="tag">Scan to join the game</p>
-  <div class="qr">${svgMarkup}</div>
-  <p class="url">${JOIN_URL}</p>
+  <div class="grid">${cells}</div>
   <script>window.addEventListener('load', () => window.print());</script>
 </body>
 </html>`)
