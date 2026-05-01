@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
+import { QRCodeSVG } from 'qrcode.react'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
 import { formatLocalIso, parseLocalIso } from '@/lib/time'
@@ -59,6 +60,9 @@ export default function AdminPage() {
   const [picks, setPicks] = useState<Pick[]>([])
   const [scores, setScores] = useState<Score[]>([])
   const [loading, setLoading] = useState(true)
+  // QR-code share modal — opens from the header pill, displays a scannable
+  // join-link for new players to walk into the event.
+  const [qrOpen, setQrOpen] = useState(false)
 
   const event = useMemo(
     () => allEvents.find(e => e.id === selectedEventId) ?? null,
@@ -299,6 +303,10 @@ export default function AdminPage() {
             rel="noreferrer"
             className="px-3 h-9 inline-flex items-center rounded-full bg-emerald-700/60 border border-emerald-400/40 text-white text-xs font-bold whitespace-nowrap"
           >🎯 Exacta Board</a>
+          <button
+            onClick={() => setQrOpen(true)}
+            className="px-3 h-9 rounded-full bg-white/10 border border-white/30 text-white text-xs font-bold whitespace-nowrap hover:bg-white/15"
+          >📱 QR Code</button>
         </div>
       </header>
 
@@ -330,7 +338,131 @@ export default function AdminPage() {
           </>
         )}
       </div>
+
+      <AnimatePresence>
+        {qrOpen && <QRCodeModal onClose={() => setQrOpen(false)} />}
+      </AnimatePresence>
     </main>
+  )
+}
+
+// ---------- Join-link QR code modal ----------
+
+const JOIN_URL = 'https://furlongandfriends.com/join'
+
+/** Dark-themed share modal — renders a scannable QR for the public join link
+ *  and offers a Print button that opens a print-friendly window with just the
+ *  code + URL (so the host can pin a paper copy at the watch party). */
+function QRCodeModal({ onClose }: { onClose: () => void }) {
+  // Ref grabs the live QRCodeSVG element so the Print popup can re-use the
+  // exact same vector markup — no extra network call, no second rendering
+  // path to keep in sync.
+  const qrWrapRef = useRef<HTMLDivElement | null>(null)
+
+  function handlePrint() {
+    const sourceSvg = qrWrapRef.current?.querySelector('svg')
+    if (!sourceSvg) return
+    // Inline the SVG and force a 320px on-paper size; the SVG itself is
+    // resolution-independent so the print quality is sharp at any output DPI.
+    const svgClone = sourceSvg.cloneNode(true) as SVGElement
+    svgClone.setAttribute('width', '320')
+    svgClone.setAttribute('height', '320')
+    const svgMarkup = svgClone.outerHTML
+
+    const w = window.open('', 'qr-print', 'width=480,height=640')
+    if (!w) return
+    w.document.write(`<!doctype html>
+<html>
+<head>
+  <title>Furlong & Friends — Join</title>
+  <meta charset="utf-8" />
+  <style>
+    @page { margin: 24mm; }
+    html, body { background: #ffffff; color: #111827; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; margin: 0; padding: 32px; text-align: center;
+    }
+    h1 { font-size: 28px; margin: 0 0 8px; font-weight: 800; }
+    p.tag { color: #6b7280; margin: 0 0 32px; font-size: 14px; }
+    .qr { padding: 16px; background: #ffffff; }
+    p.url { font-family: ui-monospace, monospace; font-size: 18px; margin-top: 24px; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Furlong &amp; Friends</h1>
+  <p class="tag">Scan to join the game</p>
+  <div class="qr">${svgMarkup}</div>
+  <p class="url">${JOIN_URL}</p>
+  <script>window.addEventListener('load', () => window.print());</script>
+</body>
+</html>`)
+    w.document.close()
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+    >
+      <motion.div
+        initial={{ scale: 0.92, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+        transition={{ type: 'spring', damping: 26, stiffness: 240 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[#0F1629] border-2 border-[var(--gold)]/40 rounded-2xl w-full max-w-md p-6 text-center text-white shadow-2xl"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-serif text-xl font-bold">📱 Join QR Code</h3>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 text-white text-xl leading-none flex items-center justify-center border border-white/20"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p className="text-sm text-white/65 mb-4">
+          Players scan this code to land directly on the join page.
+        </p>
+
+        {/* White card behind the QR so dark-mode browsers / camera apps still
+            see the high-contrast pattern they need. The wrapper ref lets the
+            Print handler grab the same SVG instead of re-rendering. */}
+        <div ref={qrWrapRef} className="inline-block bg-white p-4 rounded-xl shadow-md">
+          <QRCodeSVG
+            value={JOIN_URL}
+            size={256}
+            level="M"
+            marginSize={0}
+            aria-label={`QR code for ${JOIN_URL}`}
+          />
+        </div>
+
+        <p className="mt-4 font-mono text-sm text-[var(--gold)] break-all">
+          {JOIN_URL}
+        </p>
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="flex-1 h-11 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold shadow-md hover:bg-[var(--rose-dark)]/85"
+          >
+            🖨️ Print
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 h-11 rounded-full bg-white/10 border-2 border-white/20 text-white font-semibold hover:bg-white/15"
+          >
+            Close
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   )
 }
 
