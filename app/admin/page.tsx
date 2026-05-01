@@ -170,13 +170,16 @@ export default function AdminPage() {
           // event_id so we re-fetch and regroup; volume is small.
           const raceIds = (await supabase.from('races').select('id').eq('event_id', event.id)).data?.map(r => r.id) ?? []
           if (raceIds.length === 0) return
-          const { data } = await supabase.from('horses').select('*').in('race_id', raceIds)
+          const { data } = await supabase.from('horses').select('*').in('race_id', raceIds).order('number', { ascending: true })
           if (data) {
             const grouped: Record<string, Horse[]> = {}
             for (const h of data) {
               if (!grouped[h.race_id]) grouped[h.race_id] = []
               grouped[h.race_id].push(h)
             }
+            // Defensive sort — supabase already ordered, but multi-race
+            // groupings can interleave; sort each group on its own.
+            for (const k of Object.keys(grouped)) grouped[k].sort((a, b) => a.number - b.number)
             setHorsesByRace(grouped)
           }
         })
@@ -473,6 +476,15 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
             className="admin-input"
           />
         </Field>
+        <Field label="Max races for players">
+          <input
+            type="number"
+            min={1}
+            value={draft.max_game_races ?? 7}
+            onChange={e => setDraft({ ...draft, max_game_races: Number(e.target.value) })}
+            className="admin-input"
+          />
+        </Field>
         <Field label="Status">
           <select
             value={draft.status ?? 'draft'}
@@ -596,6 +608,8 @@ function RacesTab({
   now: number
   onChange: () => void
 }) {
+  const [oddsModalOpen, setOddsModalOpen] = useState(false)
+
   if (!event) return <p className="text-white/60">Pick or create an event first.</p>
 
   return (
@@ -603,6 +617,12 @@ function RacesTab({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="font-serif text-2xl font-bold text-white">Races</h2>
         <div className="flex items-center gap-4 flex-wrap">
+          <button
+            onClick={() => setOddsModalOpen(true)}
+            className="text-sm text-[var(--gold)] hover:text-[var(--gold)]/80 underline underline-offset-4"
+          >
+            📊 Update Odds
+          </button>
           <a
             href="/csv-builder"
             target="_blank"
@@ -620,6 +640,16 @@ function RacesTab({
         </div>
       </div>
       <BulkHorseImport event={event} races={races} onChange={onChange} />
+      <AnimatePresence>
+        {oddsModalOpen && (
+          <OddsUpdaterModal
+            races={races}
+            horsesByRace={horsesByRace}
+            onClose={() => setOddsModalOpen(false)}
+            onSaved={onChange}
+          />
+        )}
+      </AnimatePresence>
       {races.length === 0 && (
         <p className="text-white/60 text-sm italic">
           No races yet. Upload a CSV above to create them automatically.
@@ -868,41 +898,113 @@ function parsePostTime(timeStr: string, eventDate: string): string | null {
   return formatLocalIso(date)
 }
 
+/** Stakes-race heuristic: race name contains a stakes-y word, OR purse ≥ $100k.
+ *  Used to pre-check the most interesting races in the import preview. */
+const STAKES_NAME_RX = /\b(Stakes|S\.|Oaks|Derby|Cup|Handicap|Classic|Futurity|Championship|Invitational|Memorial|Sprint|Mile|Turf)\b/i
+function isStakesRace(name: string | null, purse: number | null): boolean {
+  if (purse !== null && purse >= 100000) return true
+  if (name && STAKES_NAME_RX.test(name)) return true
+  return false
+}
+
+type PreviewRace = {
+  race_number: number
+  race_name: string
+  post_time: string | null
+  purse: number | null
+  horseCount: number
+  selected: boolean
+  isStakes: boolean
+}
+
 function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race[]; onChange: () => void }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<{ inserted: number; raceCount: number; errors: string[] } | null>(null)
+  // Two-phase import: first parse + show a checklist of races (preview),
+  // then on confirm only the selected race_numbers are written to Supabase.
+  const [preview, setPreview] = useState<PreviewRace[] | null>(null)
+  const [parsedRows, setParsedRows] = useState<ReturnType<typeof parseHorseCsv>['rows']>([])
+  const [parseErrors, setParseErrors] = useState<string[]>([])
 
   function onPickFile(file: File) {
     setResult(null)
+    setPreview(null)
     const reader = new FileReader()
     reader.onload = () => setText(String(reader.result ?? ''))
     reader.onerror = () => setResult({ inserted: 0, raceCount: 0, errors: ["Couldn't read file"] })
     reader.readAsText(file)
   }
 
-  async function importCsv() {
-    setImporting(true)
+  /** Parse the textarea, build per-race summary, and show the selection screen.
+   *  No DB writes happen here — that's deferred to runImport(). */
+  function buildPreview() {
     setResult(null)
     const { rows, errors } = parseHorseCsv(text)
     if (rows.length === 0) {
       setResult({ inserted: 0, raceCount: 0, errors: errors.length ? errors : ['No valid rows found.'] })
-      setImporting(false)
       return
     }
-    const allErrors = [...errors]
-    const eventDate = typeof event.date === 'string' ? event.date.slice(0, 10) : ''
-
-    // Group rows by race_number; first row's post_time/race_name wins for the race record.
     const groups = new Map<number, typeof rows>()
     for (const r of rows) {
       const g = groups.get(r.race_number)
       if (g) g.push(r)
       else groups.set(r.race_number, [r])
     }
+    const previewRaces: PreviewRace[] = [...groups.entries()]
+      .map(([raceNumber, groupRows]) => {
+        const first = groupRows[0]
+        const name = first.race_name || `Race ${raceNumber}`
+        const stakes = isStakesRace(first.race_name, first.purse)
+        return {
+          race_number: raceNumber,
+          race_name: name,
+          post_time: first.post_time,
+          purse: first.purse,
+          horseCount: groupRows.length,
+          selected: stakes,
+          isStakes: stakes,
+        }
+      })
+      .sort((a, b) => a.race_number - b.race_number)
+    setParsedRows(rows)
+    setParseErrors(errors)
+    setPreview(previewRaces)
+  }
 
-    // Resolve each race_number → race record, creating any that don't exist yet.
+  function toggleRace(raceNumber: number) {
+    setPreview(prev => prev?.map(r =>
+      r.race_number === raceNumber ? { ...r, selected: !r.selected } : r
+    ) ?? null)
+  }
+  function selectAll() {
+    setPreview(prev => prev?.map(r => ({ ...r, selected: true })) ?? null)
+  }
+  function deselectAll() {
+    setPreview(prev => prev?.map(r => ({ ...r, selected: false })) ?? null)
+  }
+
+  /** Phase 2: import EVERY parsed race row, but flag is_game_race per the
+   *  admin's checkbox. Hidden races still land in the DB so the admin can
+   *  flip them on later via the per-card toggle. */
+  async function runImport() {
+    if (!preview) return
+    const selectedNumbers = new Set(preview.filter(r => r.selected).map(r => r.race_number))
+    setImporting(true)
+    setResult(null)
+    const allErrors = [...parseErrors]
+    const eventDate = typeof event.date === 'string' ? event.date.slice(0, 10) : ''
+
+    // Group all parsed rows by race_number — selection now drives the flag,
+    // not whether the race row gets written.
+    const groups = new Map<number, typeof parsedRows>()
+    for (const r of parsedRows) {
+      const g = groups.get(r.race_number)
+      if (g) g.push(r)
+      else groups.set(r.race_number, [r])
+    }
+
     const raceByNumber = new Map(races.map(r => [r.race_number, r]))
     const resolvedRaceIds: string[] = []
     const raceIdByNumber = new Map<number, string>()
@@ -919,6 +1021,7 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
       const isFeatured = first.is_featured
       const featuredMultiplier = first.featured_multiplier
 
+      const inGame = selectedNumbers.has(raceNumber)
       const existing = raceByNumber.get(raceNumber)
       if (existing) {
         const { error: rerr } = await supabase.from('races').update({
@@ -926,6 +1029,7 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
           post_time: postTimeIso,
           is_featured: isFeatured,
           featured_multiplier: featuredMultiplier,
+          is_game_race: inGame,
         }).eq('id', existing.id)
         if (rerr) {
           allErrors.push(`Race ${raceNumber}: couldn't update race fields: ${rerr.message}`)
@@ -943,6 +1047,7 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
           is_featured: isFeatured,
           featured_multiplier: featuredMultiplier,
           status: 'upcoming',
+          is_game_race: inGame,
         }).select('id').single()
         if (cerr || !created) {
           allErrors.push(`Race ${raceNumber}: couldn't create race: ${cerr?.message ?? 'unknown error'}`)
@@ -953,8 +1058,6 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
       }
     }
 
-    // Wipe any pre-existing horses on the races we're about to repopulate so the
-    // CSV is the source of truth and re-imports don't leave stale rows behind.
     if (resolvedRaceIds.length > 0) {
       const { error: derr } = await supabase
         .from('horses')
@@ -1006,6 +1109,9 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
     } else {
       setResult({ inserted: payload.length, raceCount: racesTouched.size, errors: allErrors })
       setText('')
+      setPreview(null)
+      setParsedRows([])
+      setParseErrors([])
     }
     setImporting(false)
     onChange()
@@ -1048,7 +1154,7 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => { setOpen(o => !o); setResult(null) }}
+            onClick={() => { setOpen(o => !o); setResult(null); setPreview(null); setParsedRows([]); setParseErrors([]) }}
             className="px-3 h-9 rounded-lg border border-[var(--gold)]/40 text-[var(--gold)] text-sm font-bold"
           >
             📥 {open ? 'Cancel' : 'Import CSV'}
@@ -1063,7 +1169,7 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
         </div>
       </div>
 
-      {open && (
+      {open && !preview && (
         <div className="space-y-2 pt-1">
           <label className="inline-flex items-center gap-2 text-sm text-white/80 cursor-pointer">
             <span className="px-3 h-9 inline-flex items-center rounded-lg border border-white/30 hover:border-white/60">
@@ -1089,14 +1195,16 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
           />
           <div className="flex gap-2 flex-wrap">
             <button
-              onClick={importCsv}
-              disabled={importing || !text.trim()}
+              type="button"
+              onClick={buildPreview}
+              disabled={!text.trim()}
               className="px-4 h-10 rounded-lg bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-sm font-bold disabled:opacity-50"
             >
-              {importing ? 'Importing…' : 'Import Horses'}
+              Preview Races →
             </button>
             {text && (
               <button
+                type="button"
                 onClick={() => { setText(''); setResult(null) }}
                 className="px-3 h-10 rounded-lg border border-white/20 text-white/70 text-sm"
               >Clear</button>
@@ -1122,11 +1230,594 @@ function BulkHorseImport({ event, races, onChange }: { event: Event; races: Race
           )}
         </div>
       )}
+
+      {open && preview && (
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h4 className="text-white text-sm font-bold">
+              Select races to include in the game
+              <span className="ml-2 text-white/50 font-normal">({preview.filter(r => r.selected).length} of {preview.length} selected)</span>
+            </h4>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAll}
+                className="text-[var(--gold)] hover:text-[var(--gold)]/80 text-xs font-semibold underline-offset-2 hover:underline"
+              >
+                Select All
+              </button>
+              <span className="text-white/30">·</span>
+              <button
+                type="button"
+                onClick={deselectAll}
+                className="text-white/60 hover:text-white text-xs font-semibold underline-offset-2 hover:underline"
+              >
+                Deselect All
+              </button>
+            </div>
+          </div>
+          <p className="text-[11px] text-white/45 italic">
+            Unchecked races will still be imported but hidden from players —
+            you can flip the In Game toggle on each card later.
+          </p>
+          <ul className="rounded-lg border border-white/15 bg-white/5 divide-y divide-white/10 max-h-80 overflow-y-auto">
+            {preview.map(r => {
+              const postTimeFormatted = r.post_time ? r.post_time : 'no post time'
+              return (
+                <li key={r.race_number} className="px-3 py-2">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={r.selected}
+                      onChange={() => toggleRace(r.race_number)}
+                      className="w-4 h-4 accent-[var(--gold)] shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-white font-bold text-sm">Race {r.race_number}</span>
+                        <span className="text-white/85 text-sm truncate">{r.race_name}</span>
+                        {r.isStakes && (
+                          <span className="text-[10px] font-bold text-[var(--gold)] bg-[var(--gold)]/15 border border-[var(--gold)]/40 px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
+                            Stakes
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-white/55 text-xs flex items-center gap-2 flex-wrap mt-0.5">
+                        <span>{postTimeFormatted}</span>
+                        <span>· {r.horseCount} horse{r.horseCount === 1 ? '' : 's'}</span>
+                        {r.purse !== null && <span>· ${r.purse.toLocaleString()}</span>}
+                      </div>
+                    </div>
+                  </label>
+                </li>
+              )
+            })}
+          </ul>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={runImport}
+              disabled={importing}
+              className="px-4 h-10 rounded-lg bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-sm font-bold disabled:opacity-50"
+            >
+              {importing
+                ? 'Importing…'
+                : `Import Selected Races (${preview.filter(r => r.selected).length} of ${preview.length})`}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPreview(null); setParsedRows([]); setParseErrors([]) }}
+              disabled={importing}
+              className="px-3 h-10 rounded-lg border border-white/20 text-white/70 text-sm"
+            >
+              ← Back to CSV
+            </button>
+          </div>
+          {parseErrors.length > 0 && (
+            <div className="text-xs text-amber-300">
+              <div className="font-semibold mb-0.5">{parseErrors.length} parse warning{parseErrors.length === 1 ? '' : 's'}:</div>
+              <ul className="list-disc list-inside ml-1 space-y-0.5">
+                {parseErrors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                {parseErrors.length > 5 && <li>…and {parseErrors.length - 5} more</li>}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }: {
+// ---------- TwinSpires odds parser ----------
+
+type ParsedHorseOdds = {
+  pp: number
+  odds: string | null
+  scratched: boolean
+}
+type ParsedOdds = {
+  raceNumber: number | null
+  raceName: string | null
+  horses: ParsedHorseOdds[]
+  warnings: string[]
+}
+
+const ODDS_RX = /\b(\d{1,3}\/\d{1,3}|\d{1,3}-\d{1,3}|EVN|EVEN)\b/gi
+const SCRATCH_RX = /\b(SCR|SCRATCHED|SCRATCH)\b/i
+
+/** A whole-line position token: just a number 1-20 with nothing else on the line. */
+function isPositionLine(s: string): boolean {
+  if (!/^\d{1,2}$/.test(s)) return false
+  const n = parseInt(s, 10)
+  return n >= 1 && n <= 20
+}
+
+/** A whole-line odds-shaped token (used by the multi-line parser). Includes
+ *  bare integers ("6" → 6-1), fractions, dashed forms, EVN/EVEN, SCR, and "-". */
+function isOddsLine(s: string): boolean {
+  return /^(\d{1,3}\/\d{1,3}|\d{1,3}-\d{1,3}|\d{1,3}|EVN|EVEN|SCR|SCRATCHED|-)$/i.test(s.trim())
+}
+
+/** A line that looks like a horse name — has letters and isn't an odds token
+ *  or a column header. */
+function isHorseNameLine(s: string): boolean {
+  if (!/[A-Za-z]/.test(s)) return false
+  if (isOddsLine(s)) return false
+  if (/^(PP|POST|HORSE|JOCKEY|TRAINER|ML|ODDS|RUNNER|ALL|EASY|BETS)\b/i.test(s)) return false
+  return true
+}
+
+/** Convert a parsed odds token to the canonical morning_line_odds string we
+ *  store on horses ("5/2", "8-1"). Bare integer N → "N-1" (TwinSpires shows
+ *  whole-number odds without the "-1" suffix). */
+function normalizeOddsToken(s: string): { odds: string | null; scratched: boolean } {
+  const t = s.trim().toUpperCase()
+  if (/^SCR(ATCHED)?$/.test(t)) return { odds: null, scratched: true }
+  if (t === '-') return { odds: null, scratched: false }
+  if (t === 'EVEN' || t === 'EVN') return { odds: 'EVN', scratched: false }
+  if (/^\d+$/.test(t)) return { odds: `${t}-1`, scratched: false }
+  return { odds: t, scratched: false }
+}
+
+/** Mobile TwinSpires copy-paste puts each cell on its own line. Horse rows
+ *  arrive as 5-line groups: PP, O, ML, PL, name. SCR replaces the O column
+ *  for scratched horses (with "-" or another SCR in PL). We claim greedy
+ *  5-line windows whenever the shape matches and bail otherwise. */
+function parseMultilineHorses(lines: string[], startIdx: number, endIdx: number): ParsedHorseOdds[] {
+  const horses: ParsedHorseOdds[] = []
+  const seen = new Set<number>()
+  let i = startIdx
+  while (i + 4 < endIdx) {
+    const ppLine = lines[i]
+    if (!isPositionLine(ppLine)) { i++; continue }
+    const o = lines[i + 1]
+    const ml = lines[i + 2]
+    const pl = lines[i + 3]
+    const name = lines[i + 4]
+    if (isOddsLine(o) && isOddsLine(ml) && isOddsLine(pl) && isHorseNameLine(name)) {
+      const pp = parseInt(ppLine, 10)
+      if (!seen.has(pp)) {
+        seen.add(pp)
+        // Prefer the O (current) column. If O is "-" because the row is
+        // scratched, fall back to ML so we still get a sensible record.
+        let primary = o.trim()
+        if (primary === '-') primary = ml.trim()
+        horses.push({ pp, ...normalizeOddsToken(primary) })
+      }
+      i += 5
+      continue
+    }
+    i++
+  }
+  return horses
+}
+
+/** Legacy single-line format: every horse on one line, e.g.
+ *  "1  6  6  11  Amalfi Drive  5-2  3/1". Pull the LAST odds-shaped token
+ *  (TwinSpires lists ML first, then live current odds). */
+function parseSingleLineHorses(lines: string[], startIdx: number, endIdx: number, warnings: string[]): ParsedHorseOdds[] {
+  const horses: ParsedHorseOdds[] = []
+  const seen = new Set<number>()
+  for (let idx = startIdx; idx < endIdx; idx++) {
+    const line = lines[idx]
+    if (/^(PP|POST|HORSE|JOCKEY|TRAINER|ML|ODDS)\b/i.test(line)) continue
+    const m = line.match(/^(\d{1,2})\b/)
+    if (!m) continue
+    // Reject bare-number lines — those are part of the multi-line format and
+    // would be misread as zero-odds horses here.
+    if (/^\d{1,2}$/.test(line)) continue
+    const pp = parseInt(m[1], 10)
+    if (pp < 1 || pp > 20) continue
+    if (seen.has(pp)) continue
+    seen.add(pp)
+
+    if (SCRATCH_RX.test(line)) {
+      horses.push({ pp, odds: null, scratched: true })
+      continue
+    }
+    const matches = [...line.matchAll(ODDS_RX)]
+    if (matches.length === 0) {
+      warnings.push(`PP ${pp}: no odds found on line "${line.slice(0, 60)}"`)
+      continue
+    }
+    let odds = matches[matches.length - 1][1].toUpperCase()
+    if (odds === 'EVEN' || odds === 'EVN') odds = 'EVN'
+    horses.push({ pp, odds, scratched: false })
+  }
+  return horses
+}
+
+/** Best-effort parse of a TwinSpires "race page" text dump. Handles two paste
+ *  shapes and picks whichever yields more horses:
+ *   - Multi-line (mobile TwinSpires): each cell on its own line — PP, O, ML,
+ *     PL, name — so we group every 5 consecutive lines.
+ *   - Single-line (desktop / older paste): each horse fits on one line and the
+ *     LAST odds-shaped token is the live current odds. */
+function parseTwinSpiresOdds(text: string): ParsedOdds {
+  const warnings: string[] = []
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+
+  let raceNumber: number | null = null
+  let raceName: string | null = null
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/\bRACE\s+(\d+)/i)
+    if (m) {
+      raceNumber = parseInt(m[1], 10)
+      const next = lines[i + 1]
+      if (next && !/^\d/.test(next) && !/Post\s*Time/i.test(next)) {
+        raceName = next
+      }
+      break
+    }
+  }
+
+  // Bound the parse to the horse section if delimiters are present —
+  // start after a `# ALL O ML PL RUNNER`-style header, stop at "EASY BETS".
+  let startIdx = 0
+  let endIdx = lines.length
+  for (let i = 0; i < lines.length; i++) {
+    const u = lines[i].toUpperCase()
+    if (/^#?\s*ALL\b.*\bO\b.*\bML\b/.test(u) || u === 'RUNNER' || /\bRUNNER\b/.test(u)) {
+      startIdx = i + 1
+      break
+    }
+  }
+  for (let i = startIdx; i < lines.length; i++) {
+    if (/EASY\s+BETS/i.test(lines[i])) {
+      endIdx = i
+      break
+    }
+  }
+
+  // Try multi-line first; if it yields no horses, fall back to single-line on
+  // the same range. Whichever returns more is what we trust.
+  const multi = parseMultilineHorses(lines, startIdx, endIdx)
+  let horses: ParsedHorseOdds[]
+  if (multi.length > 0) {
+    horses = multi
+  } else {
+    horses = parseSingleLineHorses(lines, startIdx, endIdx, warnings)
+  }
+
+  if (horses.length === 0) {
+    warnings.push('No horses parsed — check that the paste includes the post position column.')
+  }
+
+  return { raceNumber, raceName, horses, warnings }
+}
+
+// ---------- Odds Updater modal ----------
+
+function OddsUpdaterModal({
+  races, horsesByRace, onClose, onSaved,
+}: {
+  races: Race[]
+  horsesByRace: Record<string, Horse[]>
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [text, setText] = useState('')
+  const [parsed, setParsed] = useState<ParsedOdds | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<string | null>(null)
+
+  // Resolve the parsed race number to a race row in the current event.
+  const matchedRace = parsed?.raceNumber != null
+    ? races.find(r => r.race_number === parsed.raceNumber)
+    : null
+  const matchedHorses = matchedRace ? (horsesByRace[matchedRace.id] ?? []) : []
+
+  type Diff =
+    | { kind: 'change'; horse: Horse; from: string | null; to: string }
+    | { kind: 'scratch'; horse: Horse }
+    | { kind: 'unscratch'; horse: Horse; to: string | null }
+    | { kind: 'unchanged'; horse: Horse }
+    | { kind: 'unmatched'; pp: number; odds: string | null; scratched: boolean }
+
+  const diffs: Diff[] = (() => {
+    if (!parsed || !matchedRace) return []
+    const out: Diff[] = []
+    const dbByPP = new Map(matchedHorses.map(h => [h.number, h]))
+    const seenPP = new Set<number>()
+    for (const p of parsed.horses) {
+      seenPP.add(p.pp)
+      const h = dbByPP.get(p.pp)
+      if (!h) {
+        out.push({ kind: 'unmatched', pp: p.pp, odds: p.odds, scratched: p.scratched })
+        continue
+      }
+      if (p.scratched && !h.scratched) {
+        out.push({ kind: 'scratch', horse: h })
+      } else if (!p.scratched && h.scratched) {
+        out.push({ kind: 'unscratch', horse: h, to: p.odds })
+      } else if (!p.scratched && (h.morning_line_odds ?? '') !== (p.odds ?? '')) {
+        out.push({ kind: 'change', horse: h, from: h.morning_line_odds, to: p.odds! })
+      } else {
+        out.push({ kind: 'unchanged', horse: h })
+      }
+    }
+    // Horses in DB that weren't in the paste — leave alone, but flag as unchanged.
+    for (const h of matchedHorses) {
+      if (!seenPP.has(h.number)) out.push({ kind: 'unchanged', horse: h })
+    }
+    out.sort((a, b) => {
+      const an = 'horse' in a ? a.horse.number : a.pp
+      const bn = 'horse' in b ? b.horse.number : b.pp
+      return an - bn
+    })
+    return out
+  })()
+
+  function handleParse() {
+    setError(null)
+    setResult(null)
+    const p = parseTwinSpiresOdds(text)
+    if (p.raceNumber == null) {
+      setError('Could not find a "RACE N" header — make sure the paste includes the race header.')
+      return
+    }
+    setParsed(p)
+  }
+
+  function handleBack() {
+    setParsed(null)
+    setError(null)
+  }
+
+  async function handleConfirm() {
+    if (!parsed || !matchedRace) return
+    setSaving(true)
+    setError(null)
+    let updated = 0
+    let scratched = 0
+    let errors = 0
+    try {
+      for (const d of diffs) {
+        if (d.kind === 'change') {
+          const { error: e } = await supabase.from('horses')
+            .update({ morning_line_odds: d.to }).eq('id', d.horse.id)
+          if (e) errors++; else updated++
+        } else if (d.kind === 'scratch') {
+          const { error: e } = await supabase.from('horses')
+            .update({ scratched: true }).eq('id', d.horse.id)
+          if (e) errors++; else scratched++
+        } else if (d.kind === 'unscratch') {
+          const payload: { scratched: boolean; morning_line_odds?: string | null } = { scratched: false }
+          if (d.to !== null) payload.morning_line_odds = d.to
+          const { error: e } = await supabase.from('horses')
+            .update(payload).eq('id', d.horse.id)
+          if (e) errors++; else updated++
+        }
+      }
+      if (errors > 0) setError(`${errors} update${errors === 1 ? '' : 's'} failed — check the console.`)
+      const parts: string[] = []
+      if (updated > 0) parts.push(`${updated} odds update${updated === 1 ? '' : 's'}`)
+      if (scratched > 0) parts.push(`${scratched} scratch${scratched === 1 ? '' : 'es'}`)
+      setResult(parts.length ? `✓ Applied ${parts.join(' and ')} to Race ${parsed.raceNumber}.` : '✓ No changes needed.')
+      onSaved()
+    } catch (e) {
+      console.error('[oddsUpdater]', e)
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 26, stiffness: 200 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-[#0A0D16] border-t-2 sm:border-2 border-[var(--gold)]/40 sm:rounded-2xl rounded-t-3xl w-full sm:max-w-2xl sm:max-h-[90vh] max-h-[92vh] overflow-hidden flex flex-col text-white"
+      >
+        <div className="px-5 pt-4 pb-3 border-b border-white/10 flex items-center justify-between">
+          <h3 className="font-serif text-xl font-bold">📊 Update Odds from TwinSpires</h3>
+          <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none">✕</button>
+        </div>
+
+        {/* Paste / parse phase */}
+        {!parsed && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <p className="text-xs text-white/55">
+              Paste the entire race page text from TwinSpires. We auto-detect the race number from the
+              <code className="text-[var(--gold)] mx-1">RACE N</code> header and match horses by post position.
+            </p>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              rows={14}
+              placeholder="RACE 9 - Alysheba S. (G2)\nPost Time: 4:55 PM ET\nPP  Horse                    ML    O\n1   Locked                   5-2   3/1\n2   Faiza                    7-2   9/2\n3   Country Grammer          SCR\n…"
+              className="w-full p-3 rounded-lg bg-white/10 border-2 border-white/15 text-white text-xs font-mono focus:outline-none focus:border-[var(--gold)]"
+            />
+            {error && (
+              <div className="text-red-300 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                {error}
+              </div>
+            )}
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleParse}
+                disabled={!text.trim()}
+                className="px-4 h-10 rounded-lg bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-sm font-bold disabled:opacity-50"
+              >
+                Parse →
+              </button>
+              {text && (
+                <button
+                  type="button"
+                  onClick={() => { setText(''); setError(null) }}
+                  className="px-3 h-10 rounded-lg border border-white/20 text-white/70 text-sm"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Preview / confirm phase */}
+        {parsed && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {!matchedRace ? (
+              <div className="text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-3 text-sm">
+                Race {parsed.raceNumber} not found in this event.
+                {parsed.raceName && <span className="text-white/55"> ({parsed.raceName})</span>}
+              </div>
+            ) : (
+              <div className="text-[var(--gold)] text-sm font-semibold">
+                Updating Race {matchedRace.race_number}
+                {matchedRace.name && <span className="text-white/85"> — {matchedRace.name}</span>}
+                {parsed.raceName && parsed.raceName !== matchedRace.name && (
+                  <span className="text-white/45 italic"> · (paste says “{parsed.raceName}”)</span>
+                )}
+              </div>
+            )}
+
+            {matchedRace && (
+              <ul className="rounded-lg border border-white/15 bg-white/5 divide-y divide-white/10 overflow-hidden">
+                {diffs.map((d, i) => {
+                  if (d.kind === 'change') {
+                    return (
+                      <li key={i} className="px-3 py-2 flex items-center gap-2 text-sm">
+                        <span className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-[var(--gold)]/20 text-[var(--gold)] font-bold text-xs shrink-0">{d.horse.number}</span>
+                        <span className="flex-1 truncate text-white/90">{d.horse.name}</span>
+                        <span className="font-mono tabular-nums text-white/45">{d.from || '—'}</span>
+                        <span className="text-[var(--gold)]">→</span>
+                        <span className="font-mono tabular-nums text-[var(--gold)] font-bold">{d.to}</span>
+                      </li>
+                    )
+                  }
+                  if (d.kind === 'scratch') {
+                    return (
+                      <li key={i} className="px-3 py-2 flex items-center gap-2 text-sm bg-red-500/5">
+                        <span className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-red-500/20 text-red-300 font-bold text-xs shrink-0">{d.horse.number}</span>
+                        <span className="flex-1 truncate text-white/90">{d.horse.name}</span>
+                        <span className="text-red-300 font-bold text-xs uppercase tracking-wider">⚠️ Scratched</span>
+                      </li>
+                    )
+                  }
+                  if (d.kind === 'unscratch') {
+                    return (
+                      <li key={i} className="px-3 py-2 flex items-center gap-2 text-sm bg-emerald-500/5">
+                        <span className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-xs shrink-0">{d.horse.number}</span>
+                        <span className="flex-1 truncate text-white/90">{d.horse.name}</span>
+                        <span className="text-emerald-300 font-bold text-xs uppercase tracking-wider">↺ Un-scratched</span>
+                        {d.to && <span className="font-mono tabular-nums text-[var(--gold)] font-bold">{d.to}</span>}
+                      </li>
+                    )
+                  }
+                  if (d.kind === 'unmatched') {
+                    return (
+                      <li key={i} className="px-3 py-2 flex items-center gap-2 text-sm bg-amber-500/5">
+                        <span className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-amber-500/20 text-amber-200 font-bold text-xs shrink-0">{d.pp}</span>
+                        <span className="flex-1 truncate text-amber-200 italic">No matching horse in DB</span>
+                        <span className="font-mono tabular-nums text-amber-200/80">{d.scratched ? 'SCR' : (d.odds ?? '—')}</span>
+                      </li>
+                    )
+                  }
+                  // unchanged
+                  return (
+                    <li key={i} className="px-3 py-2 flex items-center gap-2 text-sm opacity-50">
+                      <span className="w-7 h-7 inline-flex items-center justify-center rounded-full bg-white/5 text-white/55 font-bold text-xs shrink-0">{d.horse.number}</span>
+                      <span className="flex-1 truncate text-white/55">{d.horse.name}</span>
+                      <span className="font-mono tabular-nums text-white/40">{d.horse.scratched ? 'SCR' : (d.horse.morning_line_odds ?? '—')}</span>
+                      <span className="text-white/30 text-xs">unchanged</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            {parsed.warnings.length > 0 && (
+              <div className="text-xs text-amber-300">
+                <div className="font-semibold mb-0.5">{parsed.warnings.length} warning{parsed.warnings.length === 1 ? '' : 's'}:</div>
+                <ul className="list-disc list-inside ml-1 space-y-0.5">
+                  {parsed.warnings.slice(0, 5).map((w, i) => <li key={i}>{w}</li>)}
+                  {parsed.warnings.length > 5 && <li>…and {parsed.warnings.length - 5} more</li>}
+                </ul>
+              </div>
+            )}
+
+            {error && (
+              <div className="text-red-300 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                {error}
+              </div>
+            )}
+            {result && (
+              <div className="text-emerald-300 text-sm bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">
+                {result}
+              </div>
+            )}
+          </div>
+        )}
+
+        {parsed && (
+          <div className="px-4 py-3 border-t border-white/10 bg-black/40 flex items-center justify-between gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleBack}
+              disabled={saving}
+              className="px-3 h-10 rounded-lg border border-white/20 text-white/70 text-sm"
+            >
+              ← Back
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                className="px-3 h-10 rounded-lg border border-white/20 text-white/70 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={saving || !matchedRace || diffs.every(d => d.kind === 'unchanged' || d.kind === 'unmatched')}
+                className="px-4 h-10 rounded-lg bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-sm font-bold disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Confirm Update'}
+              </button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  )
+}
+
+function RaceAdminCard({ race, allRaces, horses: horsesProp, players, picks, now, onChange }: {
   race: Race
   allRaces: Race[]
   horses: Horse[]
@@ -1135,11 +1826,19 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
   now: number
   onChange: () => void
 }) {
+  // Always render and operate on horses sorted by post position. Memoised so
+  // the sort doesn't run on every render unless the underlying array changes.
+  const horses = useMemo(
+    () => [...horsesProp].sort((a, b) => a.number - b.number),
+    [horsesProp],
+  )
   const [expanded, setExpanded] = useState(false)
   const [horseName, setHorseName] = useState('')
   const [horseNumber, setHorseNumber] = useState('')
   const [horseOdds, setHorseOdds] = useState('')
   const [busy, setBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   async function addHorse() {
     if (!horseName.trim() || !horseNumber.trim()) return
@@ -1174,11 +1873,39 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
   }
 
   async function deleteRace() {
-    if (!confirm(`Delete "${race.name || `Race ${race.race_number}`}" entirely?\n\nRemoves the race, its ${horses.length} horse${horses.length === 1 ? '' : 's'}, all player picks for it, and any scores. This cannot be undone.`)) return
-    await supabase.from('picks').delete().eq('race_id', race.id)
-    await supabase.from('scores').delete().eq('race_id', race.id)
-    await supabase.from('horses').delete().eq('race_id', race.id)
-    await supabase.from('races').delete().eq('id', race.id)
+    const label = `Race ${race.race_number}${race.name ? ` - ${race.name}` : ''}`
+    if (!confirm(`Delete ${label}? This cannot be undone.\n\nRemoves the race, its ${horses.length} horse${horses.length === 1 ? '' : 's'}, all player picks for it, and any scores.`)) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      // Cascade delete in dependency order: picks → scores → horses → race.
+      // Each step's error is logged + surfaced inline so a silent FK / RLS
+      // failure can't leave the admin guessing.
+      const pErr = (await supabase.from('picks').delete().eq('race_id', race.id)).error
+      if (pErr) throw new Error(`picks delete failed: ${pErr.message}`)
+      const sErr = (await supabase.from('scores').delete().eq('race_id', race.id)).error
+      if (sErr) throw new Error(`scores delete failed: ${sErr.message}`)
+      const hErr = (await supabase.from('horses').delete().eq('race_id', race.id)).error
+      if (hErr) throw new Error(`horses delete failed: ${hErr.message}`)
+      const rErr = (await supabase.from('races').delete().eq('id', race.id)).error
+      if (rErr) throw new Error(`race delete failed: ${rErr.message}`)
+      // The races realtime subscription removes the card from the list — no
+      // explicit refresh needed, but call onChange anyway for any listeners
+      // that aren't subscription-driven.
+      onChange()
+    } catch (e) {
+      console.error('[deleteRace]', e)
+      setDeleteError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  async function toggleGameRace() {
+    // is_game_race controls whether players see the race at all. Default true
+    // — admins flip it off for races they don't want in the player game.
+    const next = !(race.is_game_race ?? true)
+    await supabase.from('races').update({ is_game_race: next }).eq('id', race.id)
     onChange()
   }
 
@@ -1233,6 +1960,18 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-white/60 text-xs font-mono">RACE {race.race_number}</span>
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); void toggleGameRace() }}
+              title={(race.is_game_race ?? true) ? 'In game — players see this race. Click to hide.' : 'Hidden from players. Click to include in game.'}
+              className={`text-[10px] font-bold inline-flex items-center gap-1 px-1.5 py-0.5 rounded border ${
+                (race.is_game_race ?? true)
+                  ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/50'
+                  : 'text-white/40 bg-white/5 border-white/15 hover:text-white/70 hover:border-white/30'
+              }`}
+            >
+              {(race.is_game_race ?? true) ? 'In Game ✓' : 'Hidden'}
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); void toggleFeatured() }}
               title={race.is_featured ? `Featured (${race.featured_multiplier}× multiplier) — click to un-feature` : 'Mark as featured race (only one per event)'}
@@ -1292,15 +2031,26 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
             </button>
           )}
           <button
-            onClick={(e) => { e.stopPropagation(); void deleteRace() }}
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); void deleteRace() }}
+            disabled={deleting}
             title="Delete this race entirely (race, horses, picks, scores)"
-            className="px-3 h-9 rounded-full border-2 border-red-500/40 text-red-300 hover:bg-red-500/10 hover:border-red-500/70 text-xs font-bold"
+            className="px-3 h-9 rounded-full border-2 border-red-500/40 text-red-300 hover:bg-red-500/10 hover:border-red-500/70 text-xs font-bold disabled:opacity-50 disabled:cursor-wait"
           >
-            🗑 Delete Race
+            {deleting ? 'Deleting…' : '🗑 Delete Race'}
           </button>
           <span className="text-white/50 text-xl">{expanded ? '−' : '+'}</span>
         </div>
       </div>
+
+      {deleteError && (
+        <div className="px-4 pb-3 text-xs text-red-300 bg-red-500/10 border-t border-red-500/30">
+          <div className="pt-2 flex items-center justify-between gap-2">
+            <span><span className="font-bold">Delete failed:</span> {deleteError}</span>
+            <button onClick={() => setDeleteError(null)} className="text-red-200/70 hover:text-red-100 px-2">✕</button>
+          </div>
+        </div>
+      )}
 
       {expanded && (
         <div className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4">
@@ -1525,6 +2275,11 @@ function ResultsCard({
   onCalculated: () => void
   onChange: () => void
 }) {
+  // Sort by post position so dropdown / horse grids always read 1, 2, 3, …
+  horses = useMemo(
+    () => [...horses].sort((a, b) => a.number - b.number),
+    [horses],
+  )
   const [winId, setWinId] = useState<string>(() => horses.find(h => h.finish_position === 1)?.id ?? '')
   const [placeId, setPlaceId] = useState<string>(() => horses.find(h => h.finish_position === 2)?.id ?? '')
   const [showId, setShowId] = useState<string>(() => horses.find(h => h.finish_position === 3)?.id ?? '')

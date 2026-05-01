@@ -8,6 +8,10 @@ export type Event = {
   multiplier_visible: boolean
   score_reveal_mode: 'auto' | 'manual'
   status: string
+  /** Soft cap on how many races the wizard / picks page exposes to a player.
+   *  Optional on the type for backward compatibility; defaults to 7 at the
+   *  DB level (see scripts/add-game-race-columns.sql). */
+  max_game_races?: number
 }
 
 export type Race = {
@@ -20,6 +24,10 @@ export type Race = {
   is_featured: boolean
   featured_multiplier: number
   status: 'upcoming' | 'open' | 'locked' | 'finished'
+  /** Hide a race from players entirely — admin-tab toggle. Optional on the
+   *  type so reads of pre-migration rows still work; new writes always set it.
+   *  Defaults to true at the DB level (see scripts/add-game-race-columns.sql). */
+  is_game_race?: boolean
 }
 
 export type Horse = {

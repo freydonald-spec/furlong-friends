@@ -54,10 +54,11 @@ export default function PicksPage() {
   const picksRef = useRef<Pick[]>([])
   useEffect(() => { picksRef.current = picks }, [picks])
 
-  // ----- First-run tutorial tour -----
+  // ----- Tutorial tour — manual-only (auto-start removed; the Pick Wizard
+  // is taking over first-run onboarding). The "? How to Play" button still
+  // calls startTour() below.
   const [tourActive, setTourActive] = useState(false)
   const [tourStepIdx, setTourStepIdx] = useState(0)
-  const tourAutoStartedRef = useRef(false)
 
   const tourSteps = useMemo(() => {
     const featuredRaceExists = races.some(r => r.is_featured)
@@ -136,20 +137,6 @@ export default function PicksPage() {
     setTourStepIdx(next)
   }
 
-  // Auto-start the tour for first-time players once data has loaded.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (loading) return
-    if (tourAutoStartedRef.current) return
-    if (races.length === 0) return
-    if (tourSteps.length === 0) return
-    if (localStorage.getItem('furlong_tour_seen')) return
-    tourAutoStartedRef.current = true
-    setTourStepIdx(0)
-    setTourActive(true)
-    tourSteps[0].prepare?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, races.length, tourSteps.length])
 
   async function loadAll() {
     if (typeof window === 'undefined') return
@@ -198,7 +185,9 @@ export default function PicksPage() {
         .select('*')
         .eq('event_id', playerRow.event_id)
         .order('race_number')
-      const raceList = racesRows ?? []
+      // Players only see races flagged as in-game. Pre-migration rows have
+      // is_game_race === undefined, which we treat as in-game (default true).
+      const raceList = (racesRows ?? []).filter(r => r.is_game_race !== false)
       setRaces(raceList)
 
       if (raceList.length > 0) {
@@ -290,9 +279,11 @@ export default function PicksPage() {
           if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
             const r = payload.new as Race
             setRaces(prev => {
-              const existing = prev.find(x => x.id === r.id)
-              if (existing) return prev.map(x => x.id === r.id ? r : x).sort((a, b) => a.race_number - b.race_number)
-              return [...prev, r].sort((a, b) => a.race_number - b.race_number)
+              // If admin just flipped is_game_race off, drop the race; otherwise
+              // upsert it (re-include if it was hidden before).
+              const filtered = prev.filter(x => x.id !== r.id)
+              if (r.is_game_race === false) return filtered
+              return [...filtered, r].sort((a, b) => a.race_number - b.race_number)
             })
           } else if (payload.eventType === 'DELETE') {
             setRaces(prev => prev.filter(x => x.id !== (payload.old as Race).id))
@@ -2151,13 +2142,13 @@ function PowerPlayButton({
   }
 
   let cls = 'bg-white border-[var(--gold)]/60 text-[var(--gold)] hover:bg-[var(--gold)]/10'
-  let text = `Apply ${label} to this race`
+  let text = `Use ${label} here`
   if (onThisRace) {
     cls = 'bg-[var(--gold)] border-[var(--gold)] text-white shadow-md hover:bg-[var(--gold)]/90'
-    text = `✓ ${label} Applied — tap to remove`
+    text = `✓ ${label} Applied — remove`
   } else if (otherRace) {
     cls = 'bg-white border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--gold)]/60 hover:text-[var(--text-primary)]'
-    text = `${label} on R${otherRace.race_number} — move here?`
+    text = `Switch ${label} to this race`
   }
 
   return (

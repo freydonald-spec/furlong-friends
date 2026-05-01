@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Playfair_Display, Press_Start_2P } from "next/font/google";
 import "./globals.css";
+import { RegisterSW } from "@/components/RegisterSW";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,10 +24,28 @@ const pressStart = Press_Start_2P({
 export const metadata: Metadata = {
   title: "Furlong & Friends",
   description: "The Ultimate Derby Day Pick Em Game",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "Furlong",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/icons/icon-192x192.png",
+  },
+  other: {
+    // Older Android Chrome still reads this name; appleWebApp.capable above
+    // covers the iOS equivalent. Both are needed for the "installed app" feel.
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#F8F9FA",
+  themeColor: "#C41E3A",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -43,7 +62,10 @@ export default function RootLayout({
   // their own <main> instead.
   return (
     <html lang="en" className={`${geistSans.variable} ${playfair.variable} ${pressStart.variable}`}>
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        <RegisterSW />
+        {children}
+      </body>
     </html>
   );
 }

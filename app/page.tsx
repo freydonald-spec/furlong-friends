@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import { WatermarkBG } from '@/components/WatermarkBG'
+import { InstallPrompt } from '@/components/InstallPrompt'
 
 type ReturningPlayer = {
   id: string
@@ -114,6 +115,8 @@ export default function SplashPage() {
           Admin
         </Link>
       </div>
+
+      <InstallPrompt />
     </main>
   )
 }
