@@ -7,6 +7,7 @@ import { parseLocalIso } from '@/lib/time'
 import { oddsToValue, LONGSHOT_THRESHOLD } from '@/lib/scoring'
 import { type RaceConfidence } from '@/lib/usePeerConfidence'
 import { PeerConfidenceBar } from '@/components/PeerConfidenceBar'
+import { ScoringLegendStrip } from '@/components/ScoringLegendStrip'
 import type { Race, Horse, Pick, Player } from '@/lib/types'
 
 // Saddle-cloth post-position colors so the picker has real horse-racing feel
@@ -456,13 +457,17 @@ function RaceStep({
       {/* Header */}
       <div className="px-5 pt-4 pb-3 border-b border-[var(--border)] bg-white">
         <div className="flex items-center justify-between gap-3 mb-2">
-          <span className="text-[var(--rose-dark)] text-xs uppercase font-bold tracking-wider tabular-nums">
+          <span className="text-[var(--rose-dark)] text-xs uppercase font-bold tracking-wider tabular-nums shrink-0">
             Race {stepIdx + 1} of {totalSteps}
           </span>
+          {/* Compact scoring legend rides shotgun with the step counter so
+              players can glance at the pay table without leaving the wizard.
+              The strip itself is the click target — opens ScoringHelpModal. */}
+          <ScoringLegendStrip variant="compact" className="min-w-0 truncate" />
           <button
             onClick={onClose}
             aria-label="Close wizard"
-            className="w-9 h-9 rounded-full bg-[var(--bg-primary)] hover:bg-[var(--bg-card-hover)] text-[var(--text-primary)] text-xl leading-none flex items-center justify-center border border-[var(--border)]"
+            className="w-9 h-9 rounded-full bg-[var(--bg-primary)] hover:bg-[var(--bg-card-hover)] text-[var(--text-primary)] text-xl leading-none flex items-center justify-center border border-[var(--border)] shrink-0"
           >
             ✕
           </button>

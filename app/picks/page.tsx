@@ -13,6 +13,7 @@ import { computePlayerBadges, type Badge } from '@/lib/badges'
 import { usePeerConfidence, type RaceConfidence } from '@/lib/usePeerConfidence'
 import { PeerConfidenceBar } from '@/components/PeerConfidenceBar'
 import { PickWizard } from '@/components/PickWizard'
+import { ScoringLegendStrip } from '@/components/ScoringLegendStrip'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 export default function PicksPage() {
@@ -57,8 +58,6 @@ export default function PicksPage() {
     open: false,
     markComplete: false,
   })
-  // Scoring rules popover — opens from the (i) on the legend bar.
-  const [scoringHelpOpen, setScoringHelpOpen] = useState(false)
   // Guard so realtime player updates don't re-trigger the wizard after the
   // user has dismissed it within this session.
   const mandatoryWizardCheckedRef = useRef(false)
@@ -923,34 +922,12 @@ export default function PicksPage() {
             </div>
           ) : (
             <>
-              {/* Scoring legend — sits directly above the Day Progress bar so
-                  players are reminded what each pick is worth before they
-                  start tapping. The (i) opens a fuller modal with bonuses. */}
-              <div className="mb-2 flex items-center gap-2 px-1">
-                <div
-                  className="flex-1 flex items-center flex-wrap gap-x-1 gap-y-0.5 text-[10px] text-[var(--text-muted)] font-semibold"
-                  aria-label="Scoring summary"
-                >
-                  <span><span className="text-[var(--success)] font-bold">W=5</span></span>
-                  <span className="opacity-50">·</span>
-                  <span><span className="text-[var(--gold)] font-bold">P=3</span></span>
-                  <span className="opacity-50">·</span>
-                  <span><span className="text-[var(--text-primary)] font-bold">S=2</span></span>
-                  <span className="opacity-50">·</span>
-                  <span>wrong spot=<span className="text-[var(--text-primary)] font-bold">1</span></span>
-                  <span className="opacity-50">·</span>
-                  <span><span className="text-rose-700 font-bold">🎰+5</span></span>
-                  <span className="opacity-50">·</span>
-                  <span><span className="text-[var(--gold)] font-bold">⭐+5</span></span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setScoringHelpOpen(true)}
-                  aria-label="Scoring details"
-                  className="shrink-0 w-6 h-6 rounded-full bg-white border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--rose-dark)] hover:border-[var(--rose-dark)] text-[11px] font-bold leading-none flex items-center justify-center transition-colors"
-                >
-                  i
-                </button>
+              {/* Scoring legend — sits directly above the Day Progress bar.
+                  The whole strip is the click target (chevron + dotted-underline
+                  hint) so the affordance feels cohesive instead of a separate
+                  (i) button hovering off to the side. */}
+              <div className="mb-2 px-1">
+                <ScoringLegendStrip variant="full" />
               </div>
 
               {/* Day progress bar */}
@@ -1103,13 +1080,6 @@ export default function PicksPage() {
           )}
         </div>
       </section>
-
-      {/* Scoring rules modal */}
-      <AnimatePresence>
-        {scoringHelpOpen && (
-          <ScoringHelpModal onClose={() => setScoringHelpOpen(false)} />
-        )}
-      </AnimatePresence>
 
       {/* Race Info Modal */}
       <AnimatePresence>
@@ -1475,104 +1445,6 @@ function oddsToValue(odds: string | null | undefined): number {
   }
   const n = parseFloat(odds)
   return isNaN(n) ? Infinity : n
-}
-
-// ----- SCORING HELP MODAL -----
-// Light-themed pop-up triggered from the (i) on the legend bar. Lays out the
-// full scoring system in one screen so players don't need to leave /picks to
-// remember how a race scores.
-function ScoringHelpModal({ onClose }: { onClose: () => void }) {
-  const rules: { label: string; value: string; tone: string }[] = [
-    { label: 'Win correct', value: '5 pts', tone: 'text-[var(--success)]' },
-    { label: 'Place correct', value: '3 pts', tone: 'text-[var(--gold)]' },
-    { label: 'Show correct', value: '2 pts', tone: 'text-[var(--text-primary)]' },
-    { label: 'Right horse, wrong spot', value: '1 pt', tone: 'text-[var(--text-muted)]' },
-  ]
-  const bonuses: { label: string; value: string; emoji: string }[] = [
-    { emoji: '🎰', label: 'Longshot bonus (15-1+) on exact match', value: '+5 pts' },
-    { emoji: '⭐', label: 'Perfect race (all 3 exact)', value: '+5 pts' },
-  ]
-  return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center"
-    >
-      <motion.div
-        initial={{ y: '100%', opacity: 0.6 }} animate={{ y: 0, opacity: 1 }} exit={{ y: '100%', opacity: 0.6 }}
-        transition={{ type: 'spring', damping: 26, stiffness: 220 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-white border-t-2 sm:border-2 border-[var(--border)] sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md max-h-[88vh] overflow-hidden flex flex-col shadow-xl"
-      >
-        <div className="px-5 pt-4 pb-3 border-b border-[var(--border)] flex items-center justify-between">
-          <h3 className="font-serif text-xl font-bold text-[var(--text-primary)]">How scoring works</h3>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="w-9 h-9 rounded-full bg-[var(--bg-primary)] hover:bg-[var(--bg-card-hover)] text-[var(--text-primary)] text-xl leading-none flex items-center justify-center border border-[var(--border)]"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="overflow-y-auto p-5 bg-[var(--bg-primary)] space-y-4">
-          <section>
-            <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-              Base points
-            </h4>
-            <ul className="bg-white border border-[var(--border)] rounded-xl divide-y divide-[var(--border)] overflow-hidden shadow-sm">
-              {rules.map(r => (
-                <li key={r.label} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                  <span className="text-sm text-[var(--text-primary)]">{r.label}</span>
-                  <span className={`text-sm font-extrabold tabular-nums ${r.tone}`}>{r.value}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-              Bonuses
-            </h4>
-            <ul className="bg-white border border-[var(--border)] rounded-xl divide-y divide-[var(--border)] overflow-hidden shadow-sm">
-              {bonuses.map(b => (
-                <li key={b.label} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                  <span className="text-sm text-[var(--text-primary)] flex items-center gap-2">
-                    <span aria-hidden>{b.emoji}</span>
-                    <span>{b.label}</span>
-                  </span>
-                  <span className="text-sm font-extrabold text-[var(--gold)] tabular-nums">{b.value}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-              Power Plays
-            </h4>
-            <div className="bg-white border border-[var(--border)] rounded-xl px-3 py-2.5 shadow-sm">
-              <p className="text-sm text-[var(--text-primary)] leading-relaxed">
-                <span className="font-bold text-[var(--gold)]">×3</span> and{' '}
-                <span className="font-bold text-[var(--gold)]">×2</span> multipliers apply to your{' '}
-                <span className="font-semibold">base score</span> for that race.
-                Bonuses (🎰 longshot, ⭐ perfect race) are added{' '}
-                <span className="font-semibold">after</span> the multiplier.
-              </p>
-            </div>
-          </section>
-        </div>
-        <div className="px-4 py-3 border-t border-[var(--border)] bg-white">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full h-12 rounded-full bg-[var(--rose-dark)] text-white font-bold shadow-md hover:bg-[var(--rose-dark)]/90"
-          >
-            Got it
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  )
 }
 
 function RaceInfoModal({

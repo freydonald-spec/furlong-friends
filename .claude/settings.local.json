@@ -28,7 +28,9 @@
       "Bash(sed -i '2273,2526d' /c/VSCode-projects/furlong/app/picks/page.tsx)",
       "Bash(sed -n '2268,2280p' /c/VSCode-projects/furlong/app/picks/page.tsx)",
       "Bash(sed -i '1487,1938d' /c/VSCode-projects/furlong/app/picks/page.tsx)",
-      "Bash(sed -n '1483,1492p' /c/VSCode-projects/furlong/app/picks/page.tsx)"
+      "Bash(sed -n '1483,1492p' /c/VSCode-projects/furlong/app/picks/page.tsx)",
+      "Bash(sed -i '1450,1547d' /c/VSCode-projects/furlong/app/picks/page.tsx)",
+      "Bash(sed -n '1446,1454p' /c/VSCode-projects/furlong/app/picks/page.tsx)"
     ]
   }
 }
