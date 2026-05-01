@@ -6,6 +6,7 @@ import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "@/lib/supabase"
 import { AVATARS, AvatarIcon, useAvatarSampler } from "@/lib/avatars"
+import { InstallAppCard } from "@/components/InstallAppCard"
 import type { Event, Player } from "@/lib/types"
 
 type TakenInfo = { avatar: string; name: string; id: string }
@@ -442,6 +443,11 @@ export default function JoinPage() {
             </div>
           </div>
         )}
+
+        {/* Install-the-app helper — collapsed by default, instructions are
+            tailored to whichever platform the visitor is on. Self-hides if
+            they've already installed (display-mode: standalone). */}
+        <InstallAppCard />
       </div>
 
       {/* Rejoin modal (avatar-tap path) */}

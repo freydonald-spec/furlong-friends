@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
+import { InstallAppCard } from '@/components/InstallAppCard'
 import type { Event, Player } from '@/lib/types'
 
 type WelcomeInfo = {
@@ -264,6 +265,11 @@ export default function LoginPage() {
             </div>
           </div>
         )}
+
+        {/* Install-the-app helper — collapsed by default, instructions are
+            tailored to whichever platform the visitor is on. Self-hides if
+            they've already installed (display-mode: standalone). */}
+        <InstallAppCard />
       </div>
     </main>
   )

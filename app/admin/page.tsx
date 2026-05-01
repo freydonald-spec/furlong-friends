@@ -1510,6 +1510,121 @@ function parseTwinSpiresOdds(text: string): ParsedOdds {
   return { raceNumber, raceName, horses, warnings }
 }
 
+// ---------- Churchill Downs odds parser ----------
+
+/** Detect a Churchill Downs paste. Their site shells out each horse over many
+ *  short lines anchored on `PP N` and includes a morning-line label `M: ...`
+ *  that TwinSpires never emits — checking for both is enough to disambiguate. */
+function isChurchillDownsFormat(text: string): boolean {
+  return /\bPP\s+\d/i.test(text) && /^\s*M:\s/m.test(text)
+}
+
+/** Parse a Churchill Downs "race page" copy-paste. The site renders each
+ *  horse as a vertical block roughly shaped like:
+ *
+ *    1                ← row index (ignored)
+ *    PP 1             ← post position anchor
+ *    SCR              ← live odds slot ("SCR" / odds value / "-")
+ *    M: 20            ← morning-line odds
+ *    -                ← live odds repeated (or "-" when scratched)
+ *    expert 3rd pick  ← optional analyst label, skipped
+ *    Mae Town         ← horse name (we don't store names, but use the line
+ *                       to bound the block during parsing)
+ *
+ *  We anchor on every `PP N` line, slice the block up to the next `PP N`, and
+ *  read the line immediately after `M: ...` as the live odds value (the spec's
+ *  "second odds value"). `SCR` anywhere in the block — or `-` / missing in the
+ *  live-odds slot — flags the horse scratched. Jockey / trainer / sire-dam
+ *  lines that some pages include are simply ignored because they live outside
+ *  the (PP, M:, live) triplet we care about. */
+function parseChurchillDownsOdds(text: string): ParsedOdds {
+  const warnings: string[] = []
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+
+  // Race header — same `RACE N` convention as TwinSpires when the user
+  // pastes a Churchill page that includes it. Falls back gracefully if absent.
+  let raceNumber: number | null = null
+  let raceName: string | null = null
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/\bRACE\s+(\d+)/i)
+    if (m) {
+      raceNumber = parseInt(m[1], 10)
+      const next = lines[i + 1]
+      if (next && !/^\d/.test(next) && !/Post\s*Time/i.test(next) && !/^PP\s+\d/i.test(next)) {
+        raceName = next
+      }
+      break
+    }
+  }
+
+  // Anchor blocks on PP lines; each block runs up to the next PP line.
+  const ppIndices: number[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (/^PP\s+\d{1,2}$/i.test(lines[i])) ppIndices.push(i)
+  }
+
+  const horses: ParsedHorseOdds[] = []
+  const seen = new Set<number>()
+  for (let bi = 0; bi < ppIndices.length; bi++) {
+    const start = ppIndices[bi]
+    const end = bi + 1 < ppIndices.length ? ppIndices[bi + 1] : lines.length
+    const block = lines.slice(start, end)
+    const ppMatch = block[0].match(/^PP\s+(\d{1,2})$/i)
+    if (!ppMatch) continue
+    const pp = parseInt(ppMatch[1], 10)
+    if (pp < 1 || pp > 20) continue
+    if (seen.has(pp)) continue
+    seen.add(pp)
+
+    // Block-level scratched flag — applies if SCR appears anywhere in the
+    // horse's lines, even if Churchill still emits a stale odds value below.
+    const scratchedAnywhere = block.some(l => /^SCR$/i.test(l))
+
+    // Live odds = the line directly after `M: ...`. Treat `-`, `SCR`, or a
+    // missing line as scratched.
+    const mIdx = block.findIndex(l => /^M:\s/i.test(l))
+    let oddsValue: string | null = null
+    let liveScratched = false
+    if (mIdx === -1 || mIdx + 1 >= block.length) {
+      liveScratched = true
+    } else {
+      const liveLine = block[mIdx + 1].trim()
+      if (liveLine === '-' || /^SCR$/i.test(liveLine)) {
+        liveScratched = true
+      } else {
+        // Reuse the same normalization rules as TwinSpires so bare integers
+        // ("6") become "6-1" and EVN/EVEN canonicalize. Fractional / dashed
+        // forms pass through unchanged.
+        const norm = normalizeOddsToken(liveLine)
+        oddsValue = norm.odds
+        if (norm.scratched) liveScratched = true
+      }
+    }
+
+    horses.push({
+      pp,
+      odds: oddsValue,
+      scratched: scratchedAnywhere || liveScratched,
+    })
+  }
+
+  if (horses.length === 0) {
+    warnings.push('No horses parsed — check the paste includes "PP N" and "M: …" lines.')
+  }
+
+  return { raceNumber, raceName, horses, warnings }
+}
+
+/** Auto-detect router. Churchill's `PP N` + `M:` shell is unmistakable; falls
+ *  through to the TwinSpires parser otherwise. */
+function parseOdds(text: string): ParsedOdds {
+  return isChurchillDownsFormat(text) ? parseChurchillDownsOdds(text) : parseTwinSpiresOdds(text)
+}
+
 // ---------- Odds Updater modal ----------
 
 function OddsUpdaterModal({
@@ -1576,7 +1691,10 @@ function OddsUpdaterModal({
   function handleParse() {
     setError(null)
     setResult(null)
-    const p = parseTwinSpiresOdds(text)
+    // Auto-detect TwinSpires vs Churchill Downs paste format and route. The
+    // returned ParsedOdds shape is identical so the diff/save pipeline below
+    // doesn't need to know which parser ran.
+    const p = parseOdds(text)
     if (p.raceNumber == null) {
       setError('Could not find a "RACE N" header — make sure the paste includes the race header.')
       return
@@ -1641,7 +1759,7 @@ function OddsUpdaterModal({
         className="bg-[#0A0D16] border-t-2 sm:border-2 border-[var(--gold)]/40 sm:rounded-2xl rounded-t-3xl w-full sm:max-w-2xl sm:max-h-[90vh] max-h-[92vh] overflow-hidden flex flex-col text-white"
       >
         <div className="px-5 pt-4 pb-3 border-b border-white/10 flex items-center justify-between">
-          <h3 className="font-serif text-xl font-bold">📊 Update Odds from TwinSpires</h3>
+          <h3 className="font-serif text-xl font-bold">📊 Update Odds</h3>
           <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none">✕</button>
         </div>
 
@@ -1649,8 +1767,10 @@ function OddsUpdaterModal({
         {!parsed && (
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <p className="text-xs text-white/55">
-              Paste the entire race page text from TwinSpires. We auto-detect the race number from the
-              <code className="text-[var(--gold)] mx-1">RACE N</code> header and match horses by post position.
+              Paste the entire race page text from <span className="text-white/80">TwinSpires</span> or{' '}
+              <span className="text-white/80">Churchill Downs</span>. We auto-detect the format, the race
+              number from the <code className="text-[var(--gold)] mx-1">RACE N</code> header, and match
+              horses by post position.
             </p>
             <textarea
               value={text}
