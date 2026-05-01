@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabase'
 import { AvatarIcon, useAvatarSampler } from '@/lib/avatars'
 import { parseLocalIso } from '@/lib/time'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
+import { computeBonus } from '@/lib/scoring'
+import { computePlayerBadges, type Badge } from '@/lib/badges'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 export default function PicksPage() {
@@ -18,6 +20,9 @@ export default function PicksPage() {
   const [races, setRaces] = useState<Race[]>([])
   const [horsesByRace, setHorsesByRace] = useState<Record<string, Horse[]>>({})
   const [picks, setPicks] = useState<Pick[]>([])
+  // Event-wide picks (across all players) — used for the locked-race pick
+  // distribution and badge calculations. Lazy-fetched after the player loads.
+  const [allEventPicks, setAllEventPicks] = useState<Pick[]>([])
   const [allScores, setAllScores] = useState<Score[]>([])
   const [revealedRaces, setRevealedRaces] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -39,6 +44,11 @@ export default function PicksPage() {
   const [picksSavedToast, setPicksSavedToast] = useState(false)
   const [lockedToasts, setLockedToasts] = useState<{ id: string; raceNumber: number }[]>([])
   const [allPicksNudgeOpen, setAllPicksNudgeOpen] = useState(false)
+  // Rank/score toasts: top-of-screen feedback that auto-dismisses after 3s.
+  type RankToast = { id: string; message: string; tone: 'green' | 'red' | 'gold' }
+  const [rankToasts, setRankToasts] = useState<RankToast[]>([])
+  // Pick-All wizard
+  const [wizardOpen, setWizardOpen] = useState(false)
   // Picks ref: realtime callbacks need to read picks without going stale.
   const picksRef = useRef<Pick[]>([])
   useEffect(() => { picksRef.current = picks }, [picks])
@@ -211,6 +221,12 @@ export default function PicksPage() {
         .eq('player_id', playerRow.id)
       setPicks(picksRows ?? [])
 
+      const { data: allPicksRows } = await supabase
+        .from('picks')
+        .select('*')
+        .eq('event_id', activeEvent.id)
+      setAllEventPicks(allPicksRows ?? [])
+
       const { data: scoresRows } = await supabase
         .from('scores')
         .select('*')
@@ -313,6 +329,20 @@ export default function PicksPage() {
           }
         })
       .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'picks', filter: `event_id=eq.${event.id}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const p = payload.new as Pick
+            setAllEventPicks(prev => {
+              const existing = prev.find(x => x.id === p.id)
+              if (existing) return prev.map(x => x.id === p.id ? p : x)
+              return [...prev, p]
+            })
+          } else if (payload.eventType === 'DELETE') {
+            setAllEventPicks(prev => prev.filter(x => x.id !== (payload.old as Pick).id))
+          }
+        })
+      .on('postgres_changes',
         { event: '*', schema: 'public', table: 'scores', filter: `event_id=eq.${event.id}` },
         (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
@@ -373,6 +403,49 @@ export default function PicksPage() {
     const t = setTimeout(() => setPicksSavedToast(false), 2000)
     return () => clearTimeout(t)
   }, [picksSavedToast])
+
+  // Auto-assign multipliers on first load if both are unassigned.
+  // 3X → featured race (or highest race_number if none featured).
+  // 2X → next-highest race_number after the 3X target.
+  // (purse isn't stored on the Race row, so we use race ordering as the
+  // closest stable proxy for "second-most important race" on a stakes card.)
+  const tokenAutoAssignedRef = useRef(false)
+  useEffect(() => {
+    if (!player || !event || tokenAutoAssignedRef.current) return
+    if (races.length === 0) return
+    if (player.multiplier_3x_race_id || player.multiplier_2x_race_id) {
+      tokenAutoAssignedRef.current = true
+      return
+    }
+    const assignable = races.filter(r => r.status !== 'finished' && r.status !== 'locked')
+    if (assignable.length === 0) return
+    const sortedByNumber = [...assignable].sort((a, b) => b.race_number - a.race_number)
+    const featured = assignable.find(r => r.is_featured)
+    const threeX = featured ?? sortedByNumber[0]
+    const twoX = sortedByNumber.find(r => r.id !== threeX.id) ?? null
+    tokenAutoAssignedRef.current = true
+    void supabase
+      .from('players')
+      .update({
+        multiplier_3x_race_id: threeX.id,
+        multiplier_2x_race_id: twoX?.id ?? null,
+      })
+      .eq('id', player.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player?.id, event?.id, races.length])
+
+  // Rank/score toast plumbing. The useEffects that read myRank/myTotalScore/
+  // effectiveRevealed live below those memos to avoid TDZ.
+  const prevRankRef = useRef<{ rank: number; score: number } | null>(null)
+  const prevScoreByRaceRef = useRef<Map<string, number>>(new Map())
+
+  function pushRankToast(toast: Omit<RankToast, 'id'>) {
+    const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+    setRankToasts(prev => [...prev, { id, ...toast }])
+    setTimeout(() => {
+      setRankToasts(prev => prev.filter(t => t.id !== id))
+    }, 3000)
+  }
 
   // Race tab strip: refs to each race card + active race tracker via IntersectionObserver.
   const raceCardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
@@ -518,6 +591,68 @@ export default function PicksPage() {
     return idx === -1 ? standings.length : idx + 1
   }, [standings, player])
 
+  const myBadges = useMemo<Badge[]>(() => {
+    if (!player) return []
+    return computePlayerBadges({
+      playerId: player.id,
+      rank: myRank,
+      totalPlayers: allPlayers.length,
+      scores: allScores,
+      picks: allEventPicks,
+      races,
+      horsesByRace,
+    })
+  }, [player, myRank, allPlayers.length, allScores, allEventPicks, races, horsesByRace])
+
+  // Newly-revealed race scores → "+X points from Race N!" gold toast.
+  useEffect(() => {
+    if (!player) return
+    const current = new Map<string, number>()
+    for (const s of allScores) {
+      if (s.player_id !== player.id) continue
+      if (!effectiveRevealed.has(s.race_id)) continue
+      current.set(s.race_id, s.final_points)
+    }
+    const prev = prevScoreByRaceRef.current
+    // Skip the initial population — only emit on subsequent additions.
+    if (prev.size > 0) {
+      for (const [raceId, points] of current) {
+        if (!prev.has(raceId)) {
+          const race = races.find(r => r.id === raceId)
+          if (race) {
+            pushRankToast({
+              message: `+${points} points from Race ${race.race_number}!`,
+              tone: 'gold',
+            })
+          }
+        }
+      }
+    }
+    prevScoreByRaceRef.current = current
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allScores, effectiveRevealed, races, player?.id])
+
+  // Rank movement → green/red toast.
+  useEffect(() => {
+    if (!player) return
+    const prev = prevRankRef.current
+    if (prev !== null && prev.rank !== myRank) {
+      if (myRank < prev.rank) {
+        pushRankToast({
+          message: `📈 You moved up to #${myRank}!`,
+          tone: 'green',
+        })
+      } else {
+        pushRankToast({
+          message: `📉 You dropped to #${myRank}`,
+          tone: 'red',
+        })
+      }
+    }
+    prevRankRef.current = { rank: myRank, score: myTotalScore }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRank, myTotalScore, player?.id])
+
   // Locking alert: races within 5 minutes of post time that the player hasn't
   // picked yet. Banner switches into urgent (red, pulsing) under 1 minute.
   const lockingSoon = useMemo(() => {
@@ -533,6 +668,29 @@ export default function PicksPage() {
         return !hasPick && !dismissedAlerts.has(r.id)
       })
   }, [races, player, picks, now, dismissedAlerts])
+
+  // Aggregate "races without picks" summary for the persistent warning banner
+  // that sits below the player hero. Surfaces a count for casual urgency, and
+  // upgrades to a red per-race countdown if any unpicked race is < 30 min out.
+  const unpickedSummary = useMemo(() => {
+    if (!races.length) return null
+    const unpicked = races.filter(r => {
+      if (r.status !== 'upcoming' && r.status !== 'open') return false
+      const has = picks.some(p =>
+        p.race_id === r.id && (p.win_horse_id || p.place_horse_id || p.show_horse_id)
+      )
+      return !has
+    })
+    if (unpicked.length === 0) return null
+    const withSeconds = unpicked.map(r => {
+      const target = parseLocalIso(r.post_time)
+      const secondsUntil = target ? (target.getTime() - now) / 1000 : Infinity
+      return { race: r, secondsUntil }
+    }).sort((a, b) => a.secondsUntil - b.secondsUntil)
+    const soonest = withSeconds[0]
+    const critical = soonest.secondsUntil <= 30 * 60 && soonest.secondsUntil > 0
+    return { count: unpicked.length, soonest, critical, races: unpicked }
+  }, [races, picks, now])
 
   if (loading) {
     return (
@@ -562,6 +720,31 @@ export default function PicksPage() {
 
   return (
     <main className="min-h-screen pb-24">
+      {/* Top-of-screen rank/score toasts (auto-dismiss in 3s) */}
+      <div className="fixed top-4 left-0 right-0 z-40 pointer-events-none flex flex-col items-center gap-2 px-4">
+        <AnimatePresence>
+          {rankToasts.map(t => {
+            const tone = t.tone === 'gold'
+              ? 'bg-[var(--gold)] text-[var(--dark)] border-[var(--gold)]'
+              : t.tone === 'green'
+                ? 'bg-emerald-600/95 text-white border-emerald-300'
+                : 'bg-rose-900/90 text-rose-100 border-rose-400/60'
+            return (
+              <motion.div
+                key={t.id}
+                initial={{ y: -40, opacity: 0, scale: 0.9 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: -20, opacity: 0 }}
+                transition={{ type: 'spring', damping: 22, stiffness: 280 }}
+                className={`pointer-events-auto px-4 py-2.5 rounded-full border-2 font-bold text-sm shadow-xl ${tone}`}
+              >
+                {t.message}
+              </motion.div>
+            )
+          })}
+        </AnimatePresence>
+      </div>
+
       {/* Alert banners */}
       <AnimatePresence>
         {adminAlert && (
@@ -642,7 +825,19 @@ export default function PicksPage() {
               </span>
             </button>
             <div className="flex-1 min-w-0">
-              <h2 className="font-serif text-2xl font-bold text-white truncate">{player.name}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="font-serif text-2xl font-bold text-white truncate">{player.name}</h2>
+                {myBadges.map(b => (
+                  <span
+                    key={b.label}
+                    title={b.label}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${b.cls}`}
+                  >
+                    <span aria-hidden>{b.emoji}</span>
+                    <span>{b.label}</span>
+                  </span>
+                ))}
+              </div>
               <button
                 onClick={() => {
                   if (typeof window !== 'undefined') {
@@ -658,12 +853,31 @@ export default function PicksPage() {
               <p className="text-[var(--gold)]/80 text-sm font-serif italic mt-1">{event.name}</p>
               <div className="flex gap-4 mt-2">
                 <div>
-                  <div className="text-[var(--gold)] text-2xl font-bold leading-none">{myTotalScore}</div>
+                  <div className="text-[var(--gold)] text-2xl font-bold leading-none">
+                    <motion.span
+                      key={`pts-${myTotalScore}`}
+                      initial={{ filter: 'brightness(2.4)', textShadow: '0 0 12px rgba(201,168,76,0.9)' }}
+                      animate={{ filter: 'brightness(1)', textShadow: '0 0 0 rgba(201,168,76,0)' }}
+                      transition={{ duration: 0.6 }}
+                      className="inline-block tabular-nums"
+                    >
+                      {myTotalScore}
+                    </motion.span>
+                  </div>
                   <div className="text-white/60 text-xs uppercase tracking-wide">Points</div>
                 </div>
                 <div>
                   <div className="text-[var(--gold)] text-2xl font-bold leading-none">
-                    #{myRank}<span className="text-white/50 text-sm font-normal"> / {totalPlayers}</span>
+                    <motion.span
+                      key={`rank-${myRank}`}
+                      initial={{ filter: 'brightness(2.4)', textShadow: '0 0 12px rgba(201,168,76,0.9)' }}
+                      animate={{ filter: 'brightness(1)', textShadow: '0 0 0 rgba(201,168,76,0)' }}
+                      transition={{ duration: 0.6 }}
+                      className="inline-block tabular-nums"
+                    >
+                      #{myRank}
+                    </motion.span>
+                    <span className="text-white/50 text-sm font-normal"> / {totalPlayers}</span>
                   </div>
                   <div className="text-white/60 text-xs uppercase tracking-wide">Rank</div>
                 </div>
@@ -678,6 +892,33 @@ export default function PicksPage() {
           </button>
         </div>
       </section>
+
+      {/* Persistent unpicked-races warning banner — sticks below the player hero */}
+      {unpickedSummary && (() => {
+        const { count, soonest, critical } = unpickedSummary
+        const minutesLeft = Math.max(0, Math.floor(soonest.secondsUntil / 60))
+        const message = critical
+          ? `🔴 Race ${soonest.race.race_number} locks in ${minutesLeft} min — pick now!`
+          : `⚠️ You have ${count} race${count === 1 ? '' : 's'} without picks — locks soon!`
+        return (
+          <div
+            className={`sticky top-0 z-[15] mx-5 mb-3 max-w-2xl md:mx-auto rounded-xl border-2 shadow-lg backdrop-blur-sm cursor-pointer transition-colors ${
+              critical
+                ? 'bg-red-600/95 border-red-300 text-white animate-pulse'
+                : 'bg-amber-400/95 border-amber-300 text-amber-950 hover:bg-amber-400'
+            }`}
+            onClick={() => scrollToRace(soonest.race.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') scrollToRace(soonest.race.id) }}
+          >
+            <div className="px-4 py-3 flex items-center justify-between gap-3">
+              <span className="font-bold text-sm">{message}</span>
+              <span className="text-xs font-semibold opacity-80 shrink-0">Tap →</span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Multiplier Tokens */}
       {event.multiplier_visible && (
@@ -704,7 +945,7 @@ export default function PicksPage() {
               />
             </div>
             <p className="text-white/45 text-[11px] mt-3 text-center italic">
-              Unassigned tokens auto-apply at race time · 3× → Race 14 · 2× → Race 13
+              Tokens auto-assign to your most valuable races · tap a card to change
             </p>
           </div>
         </section>
@@ -713,21 +954,31 @@ export default function PicksPage() {
       {/* Race Cards */}
       <section className="px-5">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-end justify-between mb-2 gap-3">
+          <div className="flex items-end justify-between mb-2 gap-3 flex-wrap">
             <h3 className="text-white/80 text-sm uppercase tracking-wider font-semibold">
               Races
             </h3>
-            {races.length > 1 && (() => {
-              const allExpanded = races.every(r => expandedRaces.has(r.id))
-              return (
+            <div className="flex items-center gap-3">
+              {races.some(r => r.status === 'upcoming' || r.status === 'open') && (
                 <button
-                  onClick={() => setExpandedRaces(allExpanded ? new Set() : new Set(races.map(r => r.id)))}
-                  className="text-white/65 hover:text-white text-xs font-semibold underline-offset-2 hover:underline"
+                  onClick={() => setWizardOpen(true)}
+                  className="px-3 h-8 rounded-full bg-[var(--gold)] text-[var(--dark)] text-xs font-bold shadow-md hover:bg-[var(--gold)]/90 active:scale-[0.97] transition-all inline-flex items-center gap-1"
                 >
-                  {allExpanded ? 'Collapse All' : 'Expand All'}
+                  🏇 Pick All Races
                 </button>
-              )
-            })()}
+              )}
+              {races.length > 1 && (() => {
+                const allExpanded = races.every(r => expandedRaces.has(r.id))
+                return (
+                  <button
+                    onClick={() => setExpandedRaces(allExpanded ? new Set() : new Set(races.map(r => r.id)))}
+                    className="text-white/65 hover:text-white text-xs font-semibold underline-offset-2 hover:underline"
+                  >
+                    {allExpanded ? 'Collapse All' : 'Expand All'}
+                  </button>
+                )
+              })()}
+            </div>
           </div>
           {races.length === 0 ? (
             <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-center text-white/60">
@@ -868,6 +1119,8 @@ export default function PicksPage() {
                       return next
                     })}
                     onOpenRaceInfo={() => setInfoModalRaceId(race.id)}
+                    racePicks={allEventPicks.filter(p => p.race_id === race.id)}
+                    totalPlayers={allPlayers.length}
                   />
                 </div>
               ))}
@@ -888,6 +1141,21 @@ export default function PicksPage() {
             eventId={event.id}
             onSaved={() => setPicksSavedToast(true)}
             onClose={() => setInfoModalRaceId(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Pick All wizard */}
+      <AnimatePresence>
+        {wizardOpen && (
+          <PickAllWizard
+            races={races}
+            horsesByRace={horsesByRace}
+            picks={picks}
+            playerId={player.id}
+            eventId={event.id}
+            onSaved={() => setPicksSavedToast(true)}
+            onClose={() => setWizardOpen(false)}
           />
         )}
       </AnimatePresence>
@@ -1085,6 +1353,9 @@ function TokenCard({
           </div>
           {isAssigned ? (
             <>
+              <div className={`text-[10px] font-semibold uppercase tracking-wide ${isGold ? 'text-black/60' : 'text-white/55'}`}>
+                Auto-assigned to
+              </div>
               <div className={`text-base font-bold leading-tight ${isGold ? 'text-black' : 'text-white'}`}>
                 Race {race!.race_number}
               </div>
@@ -1097,7 +1368,7 @@ function TokenCard({
                 </div>
               ) : (
                 <div className={`text-[10px] mt-0.5 font-semibold ${isGold ? 'text-black/60' : 'text-white/55'}`}>
-                  Tap to reassign →
+                  Change →
                 </div>
               )}
             </>
@@ -1120,7 +1391,7 @@ function TokenCard({
 // ----- RACE CARD -----
 function RaceCard({
   race, horses, pick, score, scoreRevealed, multiplier, multiplierVisible, now,
-  expanded, onToggle, onOpenRaceInfo,
+  expanded, onToggle, onOpenRaceInfo, racePicks, totalPlayers,
 }: {
   race: Race
   horses: Horse[]
@@ -1133,6 +1404,10 @@ function RaceCard({
   expanded: boolean
   onToggle: () => void
   onOpenRaceInfo: () => void
+  /** Every player's pick for THIS race (so we can render the win-pick
+   *  distribution after the race locks). */
+  racePicks: Pick[]
+  totalPlayers: number
 }) {
   const horseById = (id: string | null) => horses.find(h => h.id === id) ?? null
   const winHorse = horses.find(h => h.finish_position === 1)
@@ -1286,21 +1561,64 @@ function RaceCard({
           <div className="mt-2 text-sm text-white/75 truncate">
             {pickSummary}
           </div>
+          {/* Pick'em confidence — only shown after the race locks so it can't
+              influence picks. Aggregates win-slot picks across the field. */}
+          {(race.status === 'locked' || race.status === 'finished') && racePicks.length > 0 && (() => {
+            const counts = new Map<string, number>()
+            let total = 0
+            for (const p of racePicks) {
+              if (!p.win_horse_id) continue
+              counts.set(p.win_horse_id, (counts.get(p.win_horse_id) || 0) + 1)
+              total++
+            }
+            if (total === 0) return null
+            const top = [...counts.entries()]
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 3)
+              .map(([horseId, count]) => {
+                const h = horses.find(h => h.id === horseId)
+                const pct = Math.round((count / total) * 100)
+                return { h, count, pct }
+              })
+              .filter(x => x.h)
+            if (top.length === 0) return null
+            return (
+              <div className="mt-1.5 text-[11px] text-white/45 leading-relaxed">
+                <span className="font-semibold text-white/55">🏇 Win picks:</span>{' '}
+                {top.map((t, i) => (
+                  <span key={t.h!.id}>
+                    {i > 0 && <span className="text-white/30"> · </span>}
+                    #{t.h!.number} {t.h!.name}{' '}
+                    <span className="text-white/35">{t.pct}%</span>
+                  </span>
+                ))}
+              </div>
+            )
+          })()}
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
           {/* Score badge: bright gold for ≥2pts, muted for the 1pt consolation,
-              hidden for 0 / unrevealed / unscored. */}
-          {finished && score && score.final_points > 0 && (
-            score.final_points === 1 ? (
+              hidden for 0 / unrevealed / unscored. Bonus emoji prefix (🎯/🎰)
+              when this race triggered a longshot or perfect-race bonus. */}
+          {finished && score && score.final_points > 0 && (() => {
+            const bonus = computeBonus(pick, winHorse ?? null, placeHorse ?? null, showHorse ?? null)
+            const bonusEmoji = bonus.perfect && bonus.longshot
+              ? '🎯🎰'
+              : bonus.perfect
+                ? '🎯'
+                : bonus.longshot
+                  ? '🎰'
+                  : ''
+            return score.final_points === 1 ? (
               <span className="text-[11px] font-semibold text-[var(--gold)]/70 px-2 py-0.5 rounded-full border border-[var(--gold)]/30 bg-[var(--gold)]/5 leading-none tabular-nums">
                 +1
               </span>
             ) : (
               <span className="text-base font-extrabold text-[var(--gold)] px-2.5 py-1 rounded-full border-2 border-[var(--gold)]/60 bg-[var(--gold)]/15 shadow shadow-[var(--gold)]/30 leading-none tabular-nums">
-                +{score.final_points}
+                {bonusEmoji && <span className="mr-1">{bonusEmoji}</span>}+{score.final_points}
               </span>
             )
-          )}
+          })()}
           <span className={`text-[11px] font-semibold px-2 py-1 rounded-full ${statusBadge.cls}`}>
             {statusBadge.label}
           </span>
@@ -1350,21 +1668,41 @@ function RaceCard({
               )}
 
               {/* Results — only for finished races */}
-              {finished && score && (
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-white/60">
-                    🥇 #{winHorse?.number ?? '?'} • 🥈 #{placeHorse?.number ?? '?'} • 🥉 #{showHorse?.number ?? '?'}
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[var(--gold)] font-bold text-xl leading-none">
-                      +{score.final_points}
+              {finished && score && (() => {
+                const bonus = computeBonus(pick, winHorse ?? null, placeHorse ?? null, showHorse ?? null)
+                return (
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-white/60">
+                        🥇 #{winHorse?.number ?? '?'} • 🥈 #{placeHorse?.number ?? '?'} • 🥉 #{showHorse?.number ?? '?'}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[var(--gold)] font-bold text-xl leading-none">
+                          +{score.final_points}
+                        </div>
+                        <div className="text-white/50 text-[10px]">
+                          {score.base_points} × {score.multiplier_applied}
+                          {(score.bonus_points ?? 0) > 0 && ` +${score.bonus_points} bonus`}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-white/50 text-[10px]">
-                      {score.base_points} × {score.multiplier_applied}
-                    </div>
+                    {(bonus.longshot || bonus.perfect) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {bonus.perfect && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[var(--gold)]/20 text-[var(--gold)] border border-[var(--gold)]/50">
+                            🎯 Perfect race! +5
+                          </span>
+                        )}
+                        {bonus.longshot && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-200 border border-rose-400/50">
+                            🎰 Longshot bonus! +5
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )
+              })()}
               {finished && !score && (
                 <div className="text-white/50 text-sm italic">
                   You didn&apos;t pick this race.
@@ -1693,6 +2031,260 @@ function TokenAssignModal({
           )}
         </div>
       </motion.div>
+    </motion.div>
+  )
+}
+
+// ----- PICK ALL WIZARD -----
+function PickAllWizard({
+  races, horsesByRace, picks, playerId, eventId, onSaved, onClose,
+}: {
+  races: Race[]
+  horsesByRace: Record<string, Horse[]>
+  picks: Pick[]
+  playerId: string
+  eventId: string
+  onSaved?: () => void
+  onClose: () => void
+}) {
+  // Skip locked / finished races — wizard is only for races still accepting picks.
+  const wizardRaces = useMemo(
+    () => races.filter(r => r.status === 'upcoming' || r.status === 'open'),
+    [races]
+  )
+  const [stepIdx, setStepIdx] = useState(0)
+  const [direction, setDirection] = useState(1) // +1 forward, -1 backward
+  const [pendingHorseId, setPendingHorseId] = useState<string | null>(null)
+
+  const race = wizardRaces[stepIdx]
+  const horses = race ? (horsesByRace[race.id] ?? []) : []
+  const sortedHorses = useMemo(
+    () => [...horses].sort((a, b) => a.number - b.number),
+    [horses]
+  )
+  const existingPick = race ? picks.find(p => p.race_id === race.id) ?? null : null
+
+  if (!race) {
+    // No assignable races — show a quick empty state and an exit button.
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-[var(--dark)] flex flex-col items-center justify-center px-6 text-center"
+      >
+        <div className="text-5xl mb-3">✅</div>
+        <p className="text-white text-lg font-semibold">Every race is locked or finished.</p>
+        <button
+          onClick={onClose}
+          className="mt-6 h-12 px-8 rounded-full bg-[var(--gold)] text-[var(--dark)] font-bold"
+        >
+          Close
+        </button>
+      </motion.div>
+    )
+  }
+
+  const isLastStep = stepIdx === wizardRaces.length - 1
+  const isFirstStep = stepIdx === 0
+
+  async function applyQuickPick(slot: 'win' | 'place' | 'show', horseId: string) {
+    if (!race) return
+    setPendingHorseId(horseId)
+    try {
+      const cur = {
+        win: existingPick?.win_horse_id ?? null,
+        place: existingPick?.place_horse_id ?? null,
+        show: existingPick?.show_horse_id ?? null,
+      }
+      const isToggle = cur[slot] === horseId
+      if (cur.win === horseId) cur.win = null
+      if (cur.place === horseId) cur.place = null
+      if (cur.show === horseId) cur.show = null
+      cur[slot] = isToggle ? null : horseId
+
+      const payload = {
+        win_horse_id: cur.win,
+        place_horse_id: cur.place,
+        show_horse_id: cur.show,
+      }
+
+      if (existingPick) {
+        await supabase.from('picks').update(payload).eq('id', existingPick.id)
+      } else {
+        await supabase.from('picks').insert({
+          player_id: playerId,
+          race_id: race.id,
+          event_id: eventId,
+          ...payload,
+        })
+      }
+      onSaved?.()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setPendingHorseId(null)
+    }
+  }
+
+  function goNext() {
+    if (isLastStep) {
+      onClose()
+      return
+    }
+    setDirection(1)
+    setStepIdx(i => i + 1)
+  }
+  function goPrev() {
+    if (isFirstStep) return
+    setDirection(-1)
+    setStepIdx(i => i - 1)
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-[var(--dark)] flex flex-col"
+    >
+      {/* Header + progress */}
+      <div className="px-5 pt-4 pb-3 border-b border-white/10">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[var(--gold)]/80 text-xs uppercase font-bold tracking-wider">
+            Race {stepIdx + 1} of {wizardRaces.length}
+          </span>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none flex items-center justify-center"
+            aria-label="Close wizard"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <motion.div
+            className="h-full bg-[var(--gold)]"
+            initial={false}
+            animate={{ width: `${((stepIdx + 1) / wizardRaces.length) * 100}%` }}
+            transition={{ duration: 0.3 }}
+          />
+        </div>
+      </div>
+
+      {/* Race body — slide animated by step */}
+      <div className="flex-1 overflow-hidden relative">
+        <AnimatePresence mode="wait" initial={false} custom={direction}>
+          <motion.div
+            key={race.id}
+            custom={direction}
+            initial={{ x: direction > 0 ? '100%' : '-100%', opacity: 0.6 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: direction > 0 ? '-100%' : '100%', opacity: 0.6 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+            className="absolute inset-0 overflow-y-auto"
+          >
+            <div className="px-5 pt-4 pb-6">
+              <div className="text-[var(--gold)]/80 text-xs uppercase font-bold tracking-wider">
+                Race {race.race_number}
+                {race.is_featured && (
+                  <span className="ml-2 text-[var(--gold)]">⭐ {race.featured_multiplier}X POINTS</span>
+                )}
+              </div>
+              <h3 className="font-serif text-2xl font-bold text-white mt-0.5 leading-tight">
+                {race.name || `Race ${race.race_number}`}
+              </h3>
+              <div className="text-white/50 text-xs mt-1 flex items-center gap-2 flex-wrap">
+                {race.distance && <span>{race.distance}</span>}
+                {(() => {
+                  const t = parseLocalIso(race.post_time)
+                  return t ? <span>{t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span> : null
+                })()}
+              </div>
+              <p className="mt-3 text-[11px] text-white/45">
+                Tap <span className="text-[var(--gold)]/80 font-semibold">1st / 2nd / 3rd</span> to set Win, Place, Show — picks save instantly.
+              </p>
+
+              <ul className="mt-3 divide-y divide-white/5">
+                {sortedHorses.map((h, i) => {
+                  const stripe = i % 2 === 1 ? 'bg-white/[0.03]' : ''
+                  const winSel = existingPick?.win_horse_id === h.id
+                  const placeSel = existingPick?.place_horse_id === h.id
+                  const showSel = existingPick?.show_horse_id === h.id
+                  const disabled = pendingHorseId === h.id || h.scratched
+                  return (
+                    <li key={h.id} className={`flex items-center gap-2 px-1 py-2.5 ${stripe}`}>
+                      <span className={`inline-flex items-center justify-center w-9 h-9 rounded-full font-bold text-sm tabular-nums shrink-0 ${
+                        h.scratched
+                          ? 'bg-white/5 text-white/30 border border-white/10'
+                          : 'bg-[var(--gold)]/10 text-[var(--gold)] border-2 border-[var(--gold)]/40'
+                      }`}>
+                        {h.number}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-medium flex items-center gap-1.5 ${h.scratched ? 'text-white/40 line-through' : 'text-white'}`}>
+                          <span className="truncate">{h.name}</span>
+                          {h.scratched && (
+                            <span className="shrink-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded leading-none no-underline">SCR</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`w-12 text-right text-sm font-mono tabular-nums shrink-0 ${h.scratched ? 'text-white/30 line-through' : 'text-white/70'}`}>
+                        {h.morning_line_odds || '—'}
+                      </span>
+                      {!h.scratched && (
+                        <div className="flex gap-1 shrink-0">
+                          {(['win', 'place', 'show'] as const).map(slot => {
+                            const sel = slot === 'win' ? winSel : slot === 'place' ? placeSel : showSel
+                            const label = slot === 'win' ? '1st' : slot === 'place' ? '2nd' : '3rd'
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => applyQuickPick(slot, h.id)}
+                                disabled={disabled}
+                                className={`shrink-0 h-8 w-10 rounded-md text-[11px] font-bold uppercase tracking-wide transition-colors ${
+                                  sel
+                                    ? 'bg-[var(--gold)] text-[var(--dark)] shadow-md'
+                                    : 'bg-white/5 text-white/65 border border-white/15 hover:bg-white/10 hover:text-white'
+                                } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              >
+                                {label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
+                {sortedHorses.length === 0 && (
+                  <li className="px-3 py-6 text-center text-white/50 italic">No horses listed yet.</li>
+                )}
+              </ul>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* Footer — Prev/Next */}
+      <div className="px-5 py-4 border-t border-white/10 bg-black/30 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={goPrev}
+          disabled={isFirstStep}
+          className="h-12 px-5 rounded-full border-2 border-white/20 text-white font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:border-white/40 transition-colors"
+        >
+          ← Previous
+        </button>
+        <button
+          type="button"
+          onClick={goNext}
+          className="h-12 px-6 rounded-full bg-[var(--gold)] text-[var(--dark)] font-bold shadow-md hover:bg-[var(--gold)]/90 active:scale-[0.98] transition-all"
+        >
+          {isLastStep ? 'Done ✓' : 'Next →'}
+        </button>
+      </div>
     </motion.div>
   )
 }

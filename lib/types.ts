@@ -60,6 +60,10 @@ export type Score = {
   base_points: number
   multiplier_applied: number
   final_points: number
+  /** Longshot + perfect-race bonus, added on top of base × multiplier.
+   *  Optional on the type so reads of pre-migration rows still work; new
+   *  writes always include it (see scripts/add-bonus-points-column.sql). */
+  bonus_points?: number
   win_correct: boolean
   place_correct: boolean
   show_correct: boolean

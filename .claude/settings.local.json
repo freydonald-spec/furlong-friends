@@ -20,7 +20,9 @@
       "Bash(grep -ric \"router\\\\|useRouter\\\\|\\\\\\\\.query\" \"C:/VSCode-projects/furlong/app/csv-builder/page.tsx\")",
       "Bash(netstat -ano)",
       "Bash(npx ts-node *)",
-      "Bash(echo \"EXITCODE=$?\")"
+      "Bash(echo \"EXITCODE=$?\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

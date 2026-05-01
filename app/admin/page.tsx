@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
 import { formatLocalIso, parseLocalIso } from '@/lib/time'
+import { computeBonus } from '@/lib/scoring'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 // Tick every second for live countdowns. Shared by every component that calls it.
@@ -1551,7 +1552,19 @@ function ResultsCard({
 
       const featured = race.featured_multiplier || 1
       const multiplier = featured * token
-      const final_points = base * multiplier
+      // Longshot + perfect-race bonuses are flat — they sit on top of the
+      // multiplied base so a 5-pt bonus is always 5 points, regardless of
+      // whether this race carried a 2X / 3X token.
+      const winHorse = horses.find(h => h.id === winId) ?? null
+      const placeHorse = horses.find(h => h.id === placeId) ?? null
+      const showHorse = horses.find(h => h.id === showId) ?? null
+      const bonus = computeBonus(
+        pick as Pick,
+        winHorse,
+        placeHorse,
+        showHorse,
+      )
+      const final_points = base * multiplier + bonus.total
 
       const existing = scores.find(s => s.player_id === player.id)
       return {
@@ -1562,6 +1575,7 @@ function ResultsCard({
         base_points: base,
         multiplier_applied: multiplier,
         final_points,
+        bonus_points: bonus.total,
         win_correct,
         place_correct,
         show_correct,
@@ -1759,14 +1773,19 @@ function ResultsCard({
                       .map(s => ({ s, p: players.find(p => p.id === s.player_id) }))
                       .filter(x => x.p)
                       .sort((a, b) => b.s.final_points - a.s.final_points)
-                      .map(({ s, p }) => (
-                        <div key={s.id} className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/10">
-                          <AvatarIcon id={p!.avatar} className="w-7 h-7 rounded shrink-0" />
-                          <span className="text-white text-sm flex-1 truncate">{p!.name}</span>
-                          <span className="text-[var(--gold)] font-bold">+{s.final_points}</span>
-                          <span className="text-white/40 text-xs">({s.base_points}×{s.multiplier_applied})</span>
-                        </div>
-                      ))}
+                      .map(({ s, p }) => {
+                        const bonus = s.bonus_points ?? 0
+                        return (
+                          <div key={s.id} className="flex items-center gap-2 p-2 rounded bg-white/5 border border-white/10">
+                            <AvatarIcon id={p!.avatar} className="w-7 h-7 rounded shrink-0" />
+                            <span className="text-white text-sm flex-1 truncate">{p!.name}</span>
+                            <span className="text-[var(--gold)] font-bold">+{s.final_points}</span>
+                            <span className="text-white/40 text-xs">
+                              ({s.base_points}×{s.multiplier_applied}{bonus > 0 ? ` +${bonus}` : ''})
+                            </span>
+                          </div>
+                        )
+                      })}
                   </div>
                 </div>
               )}

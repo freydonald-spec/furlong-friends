@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
-import type { Event, Race, Player, Score } from '@/lib/types'
+import { computePlayerBadges } from '@/lib/badges'
+import type { Event, Race, Horse, Pick, Player, Score } from '@/lib/types'
 
 // Public, read-only leaderboard. No password gate — same data shape as the
 // admin LeaderboardTab, but score totals are filtered through the same
@@ -20,6 +21,8 @@ export default function LeaderboardPage() {
   const [scores, setScores] = useState<Score[]>([])
   const [revealedRaces, setRevealedRaces] = useState<Set<string>>(new Set())
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null)
+  const [picks, setPicks] = useState<Pick[]>([])
+  const [horsesByRace, setHorsesByRace] = useState<Record<string, Horse[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -42,15 +45,35 @@ export default function LeaderboardPage() {
         }
         setEvent(evt)
 
-        const [racesQ, playersQ, scoresQ] = await Promise.all([
+        const [racesQ, playersQ, scoresQ, picksQ] = await Promise.all([
           supabase.from('races').select('*').eq('event_id', evt.id).order('race_number'),
           supabase.from('players').select('*').eq('event_id', evt.id),
           supabase.from('scores').select('*').eq('event_id', evt.id),
+          supabase.from('picks').select('*').eq('event_id', evt.id),
         ])
         if (cancelled) return
         setRaces(racesQ.data ?? [])
         setPlayers(playersQ.data ?? [])
         setScores(scoresQ.data ?? [])
+        setPicks(picksQ.data ?? [])
+
+        // Horses for the event — needed for longshot/perfect-race bonus
+        // detection in badge calculation. Pulled by race id list.
+        const raceIds = (racesQ.data ?? []).map(r => r.id)
+        if (raceIds.length > 0) {
+          const { data: horsesRows } = await supabase
+            .from('horses')
+            .select('*')
+            .in('race_id', raceIds)
+          if (!cancelled) {
+            const grouped: Record<string, Horse[]> = {}
+            for (const h of horsesRows ?? []) {
+              if (!grouped[h.race_id]) grouped[h.race_id] = []
+              grouped[h.race_id].push(h)
+            }
+            setHorsesByRace(grouped)
+          }
+        }
       } catch (e) {
         console.error(e)
         if (!cancelled) setError("Couldn't load the leaderboard.")
@@ -112,6 +135,22 @@ export default function LeaderboardPage() {
       return { player: p, total, wins, places, shows }
     }).sort((a, b) => b.total - a.total || a.player.name.localeCompare(b.player.name))
   }, [players, scores, effectiveRevealed])
+
+  const badgesByPlayerId = useMemo(() => {
+    const out = new Map<string, ReturnType<typeof computePlayerBadges>>()
+    standings.forEach((row, idx) => {
+      out.set(row.player.id, computePlayerBadges({
+        playerId: row.player.id,
+        rank: idx + 1,
+        totalPlayers: standings.length,
+        scores,
+        picks,
+        races,
+        horsesByRace,
+      }))
+    })
+    return out
+  }, [standings, scores, picks, races, horsesByRace])
 
   if (loading) {
     return (
@@ -194,9 +233,19 @@ export default function LeaderboardPage() {
                       <div className="flex items-center gap-2 min-w-0">
                         <AvatarIcon id={row.player.avatar} className="w-9 h-9 rounded shrink-0" />
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-white font-semibold truncate">{row.player.name}</span>
                             {medal && <span className="shrink-0 text-base">{medal}</span>}
+                            {(badgesByPlayerId.get(row.player.id) ?? []).map(b => (
+                              <span
+                                key={b.label}
+                                title={b.label}
+                                className={`shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${b.cls}`}
+                              >
+                                <span aria-hidden>{b.emoji}</span>
+                                <span>{b.label}</span>
+                              </span>
+                            ))}
                           </div>
                           <span className="text-[10px] text-white/40 font-medium">
                             {isExpanded ? '▴ hide details' : '▾ details'}
@@ -231,16 +280,19 @@ export default function LeaderboardPage() {
                                   : null
                                 const points = sc?.final_points
                                 const hasPoints = typeof points === 'number'
+                                const bonus = sc?.bonus_points ?? 0
                                 const display = hasPoints
                                   ? (points > 0 ? `+${points}` : `${points}`)
                                   : '—'
                                 const positive = hasPoints && points > 0
                                 const zero = hasPoints && points === 0
+                                const titleParts = [`Race ${r.race_number}`]
+                                if (bonus > 0) titleParts.push(`includes +${bonus} bonus`)
                                 return (
                                   <div
                                     key={r.id}
-                                    title={`Race ${r.race_number}`}
-                                    className={`flex flex-col items-center justify-center rounded-lg py-1.5 text-center border ${
+                                    title={titleParts.join(' · ')}
+                                    className={`relative flex flex-col items-center justify-center rounded-lg py-1.5 text-center border ${
                                       positive
                                         ? 'bg-[var(--gold)]/15 border-[var(--gold)]/50'
                                         : zero
@@ -256,6 +308,9 @@ export default function LeaderboardPage() {
                                           ? 'text-white/60'
                                           : 'text-white/35'
                                     }`}>{display}</span>
+                                    {bonus > 0 && (
+                                      <span className="absolute -top-1 -right-1 text-[8px]" aria-label="bonus">✨</span>
+                                    )}
                                   </div>
                                 )
                               })}
