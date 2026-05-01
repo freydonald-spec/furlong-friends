@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { parseLocalIso } from '@/lib/time'
 import { oddsToValue, LONGSHOT_THRESHOLD } from '@/lib/scoring'
+import { type RaceConfidence } from '@/lib/usePeerConfidence'
+import { PeerConfidenceBar } from '@/components/PeerConfidenceBar'
 import type { Race, Horse, Pick, Player } from '@/lib/types'
 
 // Saddle-cloth post-position colors so the picker has real horse-racing feel
@@ -27,7 +29,6 @@ function postColor(n: number) {
   return POST_COLORS[n] ?? { bg: '#1F2937', text: '#FFFFFF', ring: '#111827' }
 }
 
-const PEER_THRESHOLD = 5
 const BOLD_PCT = 20
 
 type Slot = 'win' | 'place' | 'show'
@@ -45,7 +46,11 @@ type Props = {
   races: Race[]
   horsesByRace: Record<string, Horse[]>
   picks: Pick[]
-  allEventPicks: Pick[]
+  /** Per-race peer-confidence summary, keyed by race id. Pre-computed by the
+   *  parent (which owns the realtime subscription via usePeerConfidence) so
+   *  the wizard doesn't need its own channel. Missing entries mean fewer than
+   *  PEER_CONFIDENCE_THRESHOLD players have win-picked that race. */
+  peerByRace: Record<string, RaceConfidence>
   player: Player
   eventId: string
   /** Featured-multiplier visibility — drives whether we show the Power Play step. */
@@ -68,7 +73,7 @@ export function PickWizard(props: Props) {
 }
 
 function PickWizardInner({
-  races, horsesByRace, picks, allEventPicks, player, eventId,
+  races, horsesByRace, picks, peerByRace, player, eventId,
   multiplierVisible, onSaved, onClose, markCompleteOnFinish,
 }: Props) {
   // Snapshot of pickable races taken at wizard open time so race-status changes
@@ -153,21 +158,9 @@ function PickWizardInner({
     return best === Infinity ? null : id
   }, [horses])
 
-  // Peer win-pick distribution for THIS race (excludes the current player so
-  // the bar isn't influenced by their own taps).
-  const peerWinDist = useMemo(() => {
-    const counts = new Map<string, number>()
-    let total = 0
-    if (!race) return { counts, total }
-    for (const p of allEventPicks) {
-      if (p.race_id !== race.id) continue
-      if (p.player_id === player.id) continue
-      if (!p.win_horse_id) continue
-      counts.set(p.win_horse_id, (counts.get(p.win_horse_id) || 0) + 1)
-      total++
-    }
-    return { counts, total }
-  }, [allEventPicks, race, player.id])
+  // Per-race peer-confidence summary lifted from the parent's hook. Null when
+  // fewer than PEER_CONFIDENCE_THRESHOLD players have win-picked this race.
+  const peerConfThisRace = race ? (peerByRace[race.id] ?? null) : null
 
   // Empty state — every race is already locked or finished.
   if (wizardRaces.length === 0 || !race) {
@@ -193,11 +186,6 @@ function PickWizardInner({
         </button>
       </motion.div>
     )
-  }
-
-  function pctFor(horseId: string): number {
-    if (peerWinDist.total === 0) return 0
-    return Math.round(((peerWinDist.counts.get(horseId) ?? 0) / peerWinDist.total) * 100)
   }
 
   // The "all 3 picked" gate that enables the Next Race button.
@@ -327,8 +315,7 @@ function PickWizardInner({
           direction={direction}
           horses={sortedHorses}
           favoriteId={favoriteId}
-          peerTotal={peerWinDist.total}
-          pctFor={pctFor}
+          peerConf={peerConfThisRace}
           existingPick={existingPick}
           selectedSlotFor={selectedSlotFor}
           onTapHorse={handleTap}
@@ -351,8 +338,7 @@ function PickWizardInner({
           races={wizardRaces}
           horsesByRace={horsesByRace}
           picks={picks}
-          peerPicksByRace={allEventPicks}
-          playerId={player.id}
+          peerByRace={peerByRace}
           onBack={() => { setDirection(-1); setPhase('race'); setStepIdx(wizardRaces.length - 1) }}
           onContinue={() => setPhase(multiplierVisible ? 'powerplay' : 'race')}
           onContinueAllDone={() => finalizeClose(true)}
@@ -365,8 +351,7 @@ function PickWizardInner({
           races={wizardRaces}
           horsesByRace={horsesByRace}
           picks={picks}
-          peerPicksByRace={allEventPicks}
-          playerId={player.id}
+          peerByRace={peerByRace}
           mult3x={mult3x}
           mult2x={mult2x}
           onAssign={async (slot, raceId) => {
@@ -429,7 +414,7 @@ function PickWizardInner({
 
 // ===== RACE STEP =====
 function RaceStep({
-  race, stepIdx, totalSteps, direction, horses, favoriteId, peerTotal, pctFor,
+  race, stepIdx, totalSteps, direction, horses, favoriteId, peerConf,
   existingPick, selectedSlotFor, onTapHorse, pendingHorseId, allPicked,
   isFirstRaceStep, isLastRaceStep, postTimeLocal, onPrev, onNext, onSkipRace,
   onTouchStart, onTouchEnd, onClose,
@@ -440,8 +425,8 @@ function RaceStep({
   direction: number
   horses: Horse[]
   favoriteId: string | null
-  peerTotal: number
-  pctFor: (horseId: string) => number
+  /** Per-race confidence summary; null hides the bars under each horse name. */
+  peerConf: RaceConfidence | null
   existingPick: Pick | null
   selectedSlotFor: (horseId: string) => Slot | null
   onTapHorse: (horseId: string) => void
@@ -556,8 +541,8 @@ function RaceStep({
               ) : horses.map(h => {
                 const isFavorite = !h.scratched && h.id === favoriteId
                 const sel = selectedSlotFor(h.id)
-                const peerPct = pctFor(h.id)
-                const showPeer = peerTotal >= PEER_THRESHOLD
+                const peerPct = peerConf?.pctByHorse[h.id] ?? 0
+                const showPeer = !!peerConf
                 const disabled = h.scratched || pendingHorseId === h.id
                 const cls = h.scratched
                   ? 'bg-gray-50 opacity-60'
@@ -604,17 +589,7 @@ function RaceStep({
                           )}
                         </div>
                         {showPeer && !h.scratched && (
-                          <div className="mt-1.5 flex items-center gap-2">
-                            <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden max-w-[180px]">
-                              <div
-                                className="h-full bg-gray-400 rounded-full transition-all"
-                                style={{ width: `${peerPct}%` }}
-                              />
-                            </div>
-                            <span className="text-[10px] text-[var(--text-muted)] font-semibold tabular-nums">
-                              {peerPct}% picked to win
-                            </span>
-                          </div>
+                          <PeerConfidenceBar pct={peerPct} className="mt-1.5" />
                         )}
                       </div>
                       {/* Right side: odds + selected badge */}
@@ -679,14 +654,13 @@ function RaceStep({
 
 // ===== SUMMARY STEP =====
 function SummaryStep({
-  races, horsesByRace, picks, peerPicksByRace, playerId,
+  races, horsesByRace, picks, peerByRace,
   onBack, onContinue, onContinueAllDone, showPowerPlay,
 }: {
   races: Race[]
   horsesByRace: Record<string, Horse[]>
   picks: Pick[]
-  peerPicksByRace: Pick[]
-  playerId: string
+  peerByRace: Record<string, RaceConfidence>
   onBack: () => void
   onContinue: () => void
   onContinueAllDone: () => void
@@ -715,8 +689,7 @@ function SummaryStep({
                 race={r}
                 horses={horses}
                 pick={pick}
-                allEventPicks={peerPicksByRace}
-                playerId={playerId}
+                peerConf={peerByRace[r.id] ?? null}
               />
             )
           })}
@@ -744,38 +717,16 @@ function SummaryStep({
 }
 
 function SummaryCard({
-  race, horses, pick, allEventPicks, playerId,
+  race, horses, pick, peerConf,
 }: {
   race: Race
   horses: Horse[]
   pick: Pick | null
-  allEventPicks: Pick[]
-  playerId: string
+  /** Per-race confidence from the parent's hook. Null when fewer than 5
+   *  players have win-picked this race; in that case the FAV / 👥 / 🔥
+   *  badges that depend on peer data are suppressed. */
+  peerConf: RaceConfidence | null
 }) {
-  // Win-pick distribution for this race excluding the current player.
-  const peer = useMemo(() => {
-    const counts = new Map<string, number>()
-    let total = 0
-    for (const p of allEventPicks) {
-      if (p.race_id !== race.id) continue
-      if (p.player_id === playerId) continue
-      if (!p.win_horse_id) continue
-      counts.set(p.win_horse_id, (counts.get(p.win_horse_id) || 0) + 1)
-      total++
-    }
-    return { counts, total }
-  }, [allEventPicks, race.id, playerId])
-
-  const favId = useMemo(() => {
-    let best = Infinity
-    let id: string | null = null
-    for (const h of horses) {
-      if (h.scratched) continue
-      const v = oddsToValue(h.morning_line_odds)
-      if (v < best) { best = v; id = h.id }
-    }
-    return best === Infinity ? null : id
-  }, [horses])
 
   const slots: { slot: Slot; horseId: string | null }[] = [
     { slot: 'win', horseId: pick?.win_horse_id ?? null },
@@ -820,11 +771,11 @@ function SummaryCard({
             }
             const oddsVal = oddsToValue(h.morning_line_odds)
             const longshot = oddsVal >= LONGSHOT_THRESHOLD
-            const isFav = h.id === favId
-            const peerCount = peer.counts.get(h.id) ?? 0
-            const peerPct = peer.total > 0 ? Math.round((peerCount / peer.total) * 100) : 0
+            // FAV in the summary = "most popular peer pick" (not morning-line favorite).
+            const isFav = !!peerConf && h.id === peerConf.topHorseId
+            const peerPct = peerConf?.pctByHorse[h.id] ?? 0
             const isWin = slot === 'win'
-            const bold = isWin && peer.total >= 1 && peerPct < BOLD_PCT
+            const bold = isWin && !!peerConf && peerPct < BOLD_PCT
             const pos = postColor(h.number)
             return (
               <li key={slot} className="flex items-center gap-2">
@@ -857,7 +808,7 @@ function SummaryCard({
                       🔥 BOLD
                     </span>
                   )}
-                  {isWin && peer.total >= 1 && (
+                  {isWin && peerConf && (
                     <span className="text-[9px] font-bold text-[var(--text-muted)] bg-gray-50 border border-gray-200 px-1 py-0.5 rounded tabular-nums">
                       👥 {peerPct}%
                     </span>
@@ -874,14 +825,13 @@ function SummaryCard({
 
 // ===== POWER PLAY STEP =====
 function PowerPlayStep({
-  races, horsesByRace, picks, peerPicksByRace, playerId,
+  races, horsesByRace, picks, peerByRace,
   mult3x, mult2x, onAssign, onBack, onAllDone,
 }: {
   races: Race[]
   horsesByRace: Record<string, Horse[]>
   picks: Pick[]
-  peerPicksByRace: Pick[]
-  playerId: string
+  peerByRace: Record<string, RaceConfidence>
   mult3x: string | null
   mult2x: string | null
   onAssign: (slot: '3x' | '2x', raceId: string) => Promise<void>
@@ -905,23 +855,17 @@ function PowerPlayStep({
     for (const r of pickedRaces) {
       const myPick = picks.find(p => p.race_id === r.id)
       if (!myPick?.win_horse_id) continue
-      let total = 0, mine = 0
-      for (const p of peerPicksByRace) {
-        if (p.race_id !== r.id) continue
-        if (p.player_id === playerId) continue
-        if (!p.win_horse_id) continue
-        total++
-        if (p.win_horse_id === myPick.win_horse_id) mine++
-      }
-      const pct = total > 0 ? mine / total : 0
-      if (pct > bestAgreement) { bestAgreement = pct; bestAgreementRaceId = r.id }
+      const conf = peerByRace[r.id]
+      if (!conf) continue
+      const myPct = conf.pctByHorse[myPick.win_horse_id] ?? 0
+      if (myPct > bestAgreement) { bestAgreement = myPct; bestAgreementRaceId = r.id }
     }
     const featured = [...pickedRaces]
       .filter(r => r.is_featured)
       .sort((a, b) => b.featured_multiplier - a.featured_multiplier)[0]
     const featuredRaceId = featured?.id ?? pickedRaces[0]?.id ?? null
     return { threeX: bestAgreementRaceId, twoX: featuredRaceId }
-  }, [pickedRaces, picks, peerPicksByRace, playerId])
+  }, [pickedRaces, picks, peerByRace])
 
   const [activeSlot, setActiveSlot] = useState<'3x' | '2x'>('3x')
   const [busy, setBusy] = useState(false)
@@ -1028,16 +972,11 @@ function PowerPlayStep({
             {pickedRaces.map(r => {
               const myPick = picks.find(p => p.race_id === r.id)
               const winHorse = (horsesByRace[r.id] ?? []).find(h => h.id === myPick?.win_horse_id)
-              // Confidence indicator: peer agreement on the player's win pick.
-              let agree = 0, peerTotal = 0
-              for (const p of peerPicksByRace) {
-                if (p.race_id !== r.id) continue
-                if (p.player_id === playerId) continue
-                if (!p.win_horse_id) continue
-                peerTotal++
-                if (p.win_horse_id === myPick?.win_horse_id) agree++
-              }
-              const confPct = peerTotal > 0 ? Math.round((agree / peerTotal) * 100) : null
+              // Confidence indicator: % of the field that picked the same win horse.
+              const conf = peerByRace[r.id]
+              const confPct = conf && myPick?.win_horse_id
+                ? (conf.pctByHorse[myPick.win_horse_id] ?? 0)
+                : null
               const isAssigned = activeSlot === '3x' ? mult3x === r.id : mult2x === r.id
               const isSuggested = activeSlot === '3x'
                 ? suggestions.threeX === r.id

@@ -11,6 +11,8 @@ import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import { WatermarkBG } from '@/components/WatermarkBG'
 import { computeBonus } from '@/lib/scoring'
 import { computePlayerBadges, type Badge } from '@/lib/badges'
+import { usePeerConfidence, type RaceConfidence } from '@/lib/usePeerConfidence'
+import { PeerConfidenceBar } from '@/components/PeerConfidenceBar'
 import { PickWizard } from '@/components/PickWizard'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
@@ -22,9 +24,10 @@ export default function PicksPage() {
   const [races, setRaces] = useState<Race[]>([])
   const [horsesByRace, setHorsesByRace] = useState<Record<string, Horse[]>>({})
   const [picks, setPicks] = useState<Pick[]>([])
-  // Event-wide picks (across all players) — used for the locked-race pick
-  // distribution and badge calculations. Lazy-fetched after the player loads.
-  const [allEventPicks, setAllEventPicks] = useState<Pick[]>([])
+  // Event-wide pick distribution + per-race peer-confidence summary. The hook
+  // owns the realtime channel for event-scoped picks; the component-local
+  // `picks` state above is just the current player's row.
+  const { picks: allEventPicks, byRace: peerByRace } = usePeerConfidence(event?.id ?? null)
   const [allScores, setAllScores] = useState<Score[]>([])
   const [revealedRaces, setRevealedRaces] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -220,12 +223,6 @@ export default function PicksPage() {
         .eq('player_id', playerRow.id)
       setPicks(picksRows ?? [])
 
-      const { data: allPicksRows } = await supabase
-        .from('picks')
-        .select('*')
-        .eq('event_id', activeEvent.id)
-      setAllEventPicks(allPicksRows ?? [])
-
       const { data: scoresRows } = await supabase
         .from('scores')
         .select('*')
@@ -327,20 +324,6 @@ export default function PicksPage() {
             })
           } else if (payload.eventType === 'DELETE') {
             setPicks(prev => prev.filter(x => x.id !== (payload.old as Pick).id))
-          }
-        })
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'picks', filter: `event_id=eq.${event.id}` },
-        (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const p = payload.new as Pick
-            setAllEventPicks(prev => {
-              const existing = prev.find(x => x.id === p.id)
-              if (existing) return prev.map(x => x.id === p.id ? p : x)
-              return [...prev, p]
-            })
-          } else if (payload.eventType === 'DELETE') {
-            setAllEventPicks(prev => prev.filter(x => x.id !== (payload.old as Pick).id))
           }
         })
       .on('postgres_changes',
@@ -1096,6 +1079,7 @@ export default function PicksPage() {
                           player.multiplier_3x_race_id === race.id ? '3x' :
                           player.multiplier_2x_race_id === race.id ? '2x' : null
                         }
+                        peerConf={peerByRace[race.id] ?? null}
                         now={now}
                         onOpen={() => setInfoModalRaceId(race.id)}
                       />
@@ -1123,6 +1107,7 @@ export default function PicksPage() {
             multiplier3xRaceId={player.multiplier_3x_race_id}
             multiplier2xRaceId={player.multiplier_2x_race_id}
             multiplierVisible={event.multiplier_visible}
+            peerConf={peerByRace[infoModalRaceId] ?? null}
           />
         )}
       </AnimatePresence>
@@ -1135,7 +1120,7 @@ export default function PicksPage() {
             races={races}
             horsesByRace={horsesByRace}
             picks={picks}
-            allEventPicks={allEventPicks}
+            peerByRace={peerByRace}
             player={player}
             eventId={event.id}
             multiplierVisible={event.multiplier_visible}
@@ -1296,7 +1281,7 @@ function PicksNavTab({
 
 // ----- RACE TILE — compact grid card -----
 function RaceTile({
-  race, horses, pick, score, scoreRevealed, multiplier, now, onOpen,
+  race, horses, pick, score, scoreRevealed, multiplier, peerConf, now, onOpen,
 }: {
   race: Race
   horses: Horse[]
@@ -1304,6 +1289,8 @@ function RaceTile({
   score: Score | null
   scoreRevealed: boolean
   multiplier: '2x' | '3x' | null
+  /** Per-race confidence summary; null when fewer than 5 players have win-picked. */
+  peerConf: RaceConfidence | null
   now: number
   onOpen: () => void
 }) {
@@ -1441,6 +1428,18 @@ function RaceTile({
           <span>{postTimeText}</span>
         ) : null}
       </div>
+      {/* Mini peer-confidence: only after the race locks (so the bar can't
+          steer live picks) and only when 5+ players win-picked. */}
+      {(locked || race.status === 'finished') && peerConf && (() => {
+        const top = horses.find(h => h.id === peerConf.topHorseId)
+        if (!top) return null
+        return (
+          <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">
+            👥 #{top.number} {top.name}{' '}
+            <span className="font-bold tabular-nums">{peerConf.topPct}%</span>
+          </div>
+        )
+      })()}
       <div className="mt-2">{footer}</div>
     </button>
   )
@@ -1913,7 +1912,7 @@ function oddsToValue(odds: string | null | undefined): number {
 
 function RaceInfoModal({
   race, horses, existingPick, playerId, eventId, onSaved, onClose,
-  races, multiplier3xRaceId, multiplier2xRaceId, multiplierVisible,
+  races, multiplier3xRaceId, multiplier2xRaceId, multiplierVisible, peerConf,
 }: {
   race: Race
   horses: Horse[]
@@ -1927,6 +1926,8 @@ function RaceInfoModal({
   multiplier3xRaceId: string | null
   multiplier2xRaceId: string | null
   multiplierVisible: boolean
+  /** Per-race confidence summary; null when fewer than 5 players have win-picked. */
+  peerConf: RaceConfidence | null
 }) {
   const postTimeLocal = parseLocalIso(race.post_time)
   // Sort by post position (number) so the program reads in gate order. Scratched
@@ -2112,6 +2113,12 @@ function RaceInfoModal({
                           </span>
                         )}
                       </div>
+                      {peerConf && !h.scratched && (
+                        <PeerConfidenceBar
+                          pct={peerConf.pctByHorse[h.id] ?? 0}
+                          className="mt-1"
+                        />
+                      )}
                     </div>
                     <span className={`w-12 text-right text-sm font-mono tabular-nums shrink-0 ${
                       h.scratched ? 'text-gray-400 line-through' : 'text-[var(--text-muted)]'
