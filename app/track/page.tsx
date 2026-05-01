@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getAvatar, AvatarIcon } from '@/lib/avatars'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import { WatermarkBG } from '@/components/WatermarkBG'
-import type { Event, Race, Player, Score } from '@/lib/types'
+import type { Event, Race, Player, Score, Pick, Horse } from '@/lib/types'
 
 // ─── Track geometry (SVG viewBox 0 0 800 280) ─────────────────────────────
 // Horizontal oval (long straights + semicircle ends) with a horizontal
@@ -147,6 +147,13 @@ export default function TrackPage() {
   const revealResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [confettiKey, setConfettiKey] = useState(0)
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null)
+  // Lazy-loaded race-by-race detail for the player tap modal: picks for that
+  // player + horse rows for the event so we can resolve win/place/show
+  // horse_ids → numbers. Reset whenever the modal opens for a new player.
+  const [playerDetail, setPlayerDetail] = useState<
+    { playerId: string; picks: Pick[]; horsesByRace: Record<string, Horse[]> } | null
+  >(null)
+  const [playerDetailLoading, setPlayerDetailLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -224,6 +231,39 @@ export default function TrackPage() {
     return () => { void supabase.removeChannel(channel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id])
+
+  // Lazy-fetch picks + horses for the selected player so the tap modal can
+  // render W·P·S numbers without bloating the initial page load. Re-runs
+  // whenever the user opens a different player; cleared on close.
+  useEffect(() => {
+    if (!selectedPlayer || !event) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPlayerDetail(null)
+      return
+    }
+    let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPlayerDetailLoading(true)
+    void (async () => {
+      const [picksQ, horsesQ] = await Promise.all([
+        supabase.from('picks').select('*').eq('event_id', event.id).eq('player_id', selectedPlayer),
+        supabase.from('horses').select('*').in('race_id', races.map(r => r.id)),
+      ])
+      if (cancelled) return
+      const horsesByRace: Record<string, Horse[]> = {}
+      for (const h of horsesQ.data ?? []) {
+        if (!horsesByRace[h.race_id]) horsesByRace[h.race_id] = []
+        horsesByRace[h.race_id].push(h)
+      }
+      setPlayerDetail({
+        playerId: selectedPlayer,
+        picks: (picksQ.data ?? []) as Pick[],
+        horsesByRace,
+      })
+      setPlayerDetailLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [selectedPlayer, event, races])
 
   // In auto-reveal mode every race counts as revealed.
   const effectiveRevealed = useMemo(() => {
@@ -663,7 +703,7 @@ export default function TrackPage() {
               <motion.div
                 initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
                 onClick={e => e.stopPropagation()}
-                className={`bg-[#0F1629] border-2 ${isWinner ? 'border-[var(--gold)]' : 'border-[var(--gold)]/50'} rounded-2xl p-6 text-center max-w-sm w-full ${isWinner ? 'shadow-[0_0_60px_rgba(201,168,76,0.6)]' : ''}`}
+                className={`bg-[#0F1629] border-2 ${isWinner ? 'border-[var(--gold)]' : 'border-[var(--gold)]/50'} rounded-2xl p-6 max-w-md w-full max-h-[88vh] overflow-y-auto text-center ${isWinner ? 'shadow-[0_0_60px_rgba(201,168,76,0.6)]' : ''}`}
               >
                 {isWinner && (
                   <div className="text-[var(--gold)] font-serif italic font-extrabold text-3xl mb-2 tracking-wide">
@@ -682,6 +722,84 @@ export default function TrackPage() {
                     <div className="text-white/60 text-xs uppercase">Rank</div>
                   </div>
                 </div>
+
+                {/* Race-by-race breakdown — mirrors the leaderboard expansion.
+                    Pulled lazily when the modal opened (see playerDetail state). */}
+                <div className="mt-5 text-left">
+                  <div className="text-[10px] uppercase tracking-wider text-white/55 font-bold mb-2">
+                    Race-by-race
+                  </div>
+                  {playerDetailLoading || !playerDetail || playerDetail.playerId !== row.player.id ? (
+                    <div className="text-center text-white/55 italic text-xs py-4">Loading picks…</div>
+                  ) : (
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(76px,1fr))] gap-1.5">
+                      {races.map(r => {
+                        const revealed = effectiveRevealed.has(r.id)
+                        const sc = revealed
+                          ? scores.find(s => s.player_id === row.player.id && s.race_id === r.id)
+                          : null
+                        const points = sc?.final_points
+                        const hasPoints = typeof points === 'number'
+                        const bonus = sc?.bonus_points ?? 0
+                        const positive = hasPoints && points > 0
+                        const zero = hasPoints && points === 0
+                        const pk = playerDetail.picks.find(p => p.race_id === r.id)
+                        const horseList = playerDetail.horsesByRace[r.id] ?? []
+                        const numFor = (id: string | null | undefined) =>
+                          id ? (horseList.find(h => h.id === id)?.number ?? '—') : '—'
+                        const wps = pk
+                          ? `${numFor(pk.win_horse_id)}·${numFor(pk.place_horse_id)}·${numFor(pk.show_horse_id)}`
+                          : null
+                        const powerPlay = row.player.multiplier_3x_race_id === r.id
+                          ? '×3'
+                          : row.player.multiplier_2x_race_id === r.id
+                            ? '×2'
+                            : null
+                        const display = hasPoints
+                          ? (points > 0 ? `+${points}` : `${points}`)
+                          : '—'
+                        return (
+                          <div
+                            key={r.id}
+                            className={`relative flex flex-col items-center justify-center rounded-lg py-1.5 px-1 text-center border ${
+                              positive
+                                ? 'bg-[var(--gold)]/15 border-[var(--gold)]/60'
+                                : zero
+                                  ? 'bg-white/5 border-white/15'
+                                  : 'bg-white/[0.03] border-white/10'
+                            }`}
+                          >
+                            <span className="text-[10px] text-white/55 font-bold">R{r.race_number}</span>
+                            <span className={`text-sm font-bold tabular-nums leading-tight ${
+                              positive
+                                ? 'text-[var(--gold)]'
+                                : zero
+                                  ? 'text-white'
+                                  : 'text-white/40'
+                            }`}>{display}</span>
+                            <span className={`text-[9px] font-mono tabular-nums leading-tight ${
+                              wps ? 'text-white/60' : 'text-white/25'
+                            }`}>
+                              {wps ?? '—·—·—'}
+                            </span>
+                            {bonus > 0 && (
+                              <span className="absolute -top-1 -right-1 text-[8px]" aria-label="bonus">✨</span>
+                            )}
+                            {powerPlay && (
+                              <span
+                                className="absolute -top-1.5 -left-1.5 inline-flex items-center justify-center min-w-[20px] h-[14px] px-1 rounded-full bg-[var(--gold)] text-[#1a0a05] text-[8px] font-extrabold leading-none border border-white/40 shadow-sm"
+                                aria-label={`Power play ${powerPlay}`}
+                              >
+                                {powerPlay}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <button onClick={() => setSelectedPlayer(null)} className="mt-5 px-6 h-11 rounded-full border-2 border-white/20 text-white font-semibold">
                   Close
                 </button>

@@ -274,7 +274,7 @@ export default function LeaderboardPage() {
                             <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-bold mb-2">
                               Race-by-race
                             </div>
-                            <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
+                            <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-1.5">
                               {races.map(r => {
                                 const revealed = effectiveRevealed.has(r.id)
                                 const sc = revealed
@@ -283,18 +283,38 @@ export default function LeaderboardPage() {
                                 const points = sc?.final_points
                                 const hasPoints = typeof points === 'number'
                                 const bonus = sc?.bonus_points ?? 0
+                                const positive = hasPoints && points > 0
+                                const zero = hasPoints && points === 0
+                                // Pull this player's pick + horse numbers for the W·P·S strip below
+                                // the points. Use '—' for any slot they left empty.
+                                const pk = picks.find(p => p.player_id === row.player.id && p.race_id === r.id)
+                                const horseList = horsesByRace[r.id] ?? []
+                                const numFor = (id: string | null | undefined) =>
+                                  id ? (horseList.find(h => h.id === id)?.number ?? '—') : '—'
+                                const wps = pk
+                                  ? `${numFor(pk.win_horse_id)}·${numFor(pk.place_horse_id)}·${numFor(pk.show_horse_id)}`
+                                  : null
+                                // Power-play bubble — players.multiplier_*x_race_id flags which race
+                                // they spent each token on. Show the higher one (×3) when both happen
+                                // to land on the same race.
+                                const powerPlay = row.player.multiplier_3x_race_id === r.id
+                                  ? '×3'
+                                  : row.player.multiplier_2x_race_id === r.id
+                                    ? '×2'
+                                    : null
                                 const display = hasPoints
                                   ? (points > 0 ? `+${points}` : `${points}`)
                                   : '—'
-                                const positive = hasPoints && points > 0
-                                const zero = hasPoints && points === 0
                                 const titleParts = [`Race ${r.race_number}`]
+                                if (wps) titleParts.push(`Picks ${wps}`)
+                                if (hasPoints) titleParts.push(`${display} pts`)
                                 if (bonus > 0) titleParts.push(`includes +${bonus} bonus`)
+                                if (powerPlay) titleParts.push(`Power Play ${powerPlay}`)
                                 return (
                                   <div
                                     key={r.id}
                                     title={titleParts.join(' · ')}
-                                    className={`relative flex flex-col items-center justify-center rounded-lg py-1.5 text-center border ${
+                                    className={`relative flex flex-col items-center justify-center rounded-lg py-1.5 px-1 text-center border ${
                                       positive
                                         ? 'bg-amber-50 border-[var(--gold)]/50'
                                         : zero
@@ -303,15 +323,28 @@ export default function LeaderboardPage() {
                                     }`}
                                   >
                                     <span className="text-[10px] text-[var(--text-muted)] font-bold">R{r.race_number}</span>
-                                    <span className={`text-sm font-bold tabular-nums ${
+                                    <span className={`text-sm font-bold tabular-nums leading-tight ${
                                       positive
                                         ? 'text-[var(--gold)]'
                                         : zero
                                           ? 'text-[var(--text-primary)]'
                                           : 'text-[var(--text-muted)]/60'
                                     }`}>{display}</span>
+                                    <span className={`text-[9px] font-mono tabular-nums leading-tight ${
+                                      wps ? 'text-[var(--text-muted)]' : 'text-[var(--text-muted)]/40'
+                                    }`}>
+                                      {wps ?? '—·—·—'}
+                                    </span>
                                     {bonus > 0 && (
                                       <span className="absolute -top-1 -right-1 text-[8px]" aria-label="bonus">✨</span>
+                                    )}
+                                    {powerPlay && (
+                                      <span
+                                        className="absolute -top-1.5 -left-1.5 inline-flex items-center justify-center min-w-[20px] h-[14px] px-1 rounded-full bg-[var(--gold)] text-white text-[8px] font-extrabold leading-none border border-white shadow-sm"
+                                        aria-label={`Power play ${powerPlay}`}
+                                      >
+                                        {powerPlay}
+                                      </span>
                                     )}
                                   </div>
                                 )

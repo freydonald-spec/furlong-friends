@@ -340,6 +340,15 @@ function PickWizardInner({
           picks={picks}
           peerByRace={peerByRace}
           onBack={() => { setDirection(-1); setPhase('race'); setStepIdx(wizardRaces.length - 1) }}
+          onJumpToRace={(idx) => {
+            // Jump straight to the tapped race's step. After re-picking the
+            // player can hit "Next Race" through the remaining races and the
+            // existing isLastRaceStep logic will deliver them back to summary.
+            const safeIdx = Math.max(0, Math.min(wizardRaces.length - 1, idx))
+            setDirection(safeIdx >= stepIdx ? 1 : -1)
+            setStepIdx(safeIdx)
+            setPhase('race')
+          }}
           onContinue={() => setPhase(multiplierVisible ? 'powerplay' : 'race')}
           onContinueAllDone={() => finalizeClose(true)}
           showPowerPlay={multiplierVisible}
@@ -655,13 +664,16 @@ function RaceStep({
 // ===== SUMMARY STEP =====
 function SummaryStep({
   races, horsesByRace, picks, peerByRace,
-  onBack, onContinue, onContinueAllDone, showPowerPlay,
+  onBack, onJumpToRace, onContinue, onContinueAllDone, showPowerPlay,
 }: {
   races: Race[]
   horsesByRace: Record<string, Horse[]>
   picks: Pick[]
   peerByRace: Record<string, RaceConfidence>
   onBack: () => void
+  /** Jump back to a specific race step in the wizard so the player can edit
+   *  picks. Index is into the same `races` array that drives the steps. */
+  onJumpToRace: (idx: number) => void
   onContinue: () => void
   onContinueAllDone: () => void
   showPowerPlay: boolean
@@ -674,13 +686,14 @@ function SummaryStep({
           Your picks are in!
         </h2>
         <p className="text-sm text-[var(--text-muted)] mt-1">
-          Here&apos;s how your card looks. {showPowerPlay ? 'Up next: pick where to spend your Power Plays.' : 'You\'re all set!'}
+          Here&apos;s how your card looks. Tap any race to edit.{' '}
+          {showPowerPlay ? 'Then: pick where to spend your Power Plays.' : "You're all set!"}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 bg-[var(--bg-primary)]">
         <ul className="space-y-3 max-w-xl mx-auto">
-          {races.map(r => {
+          {races.map((r, idx) => {
             const pick = picks.find(p => p.race_id === r.id) ?? null
             const horses = horsesByRace[r.id] ?? []
             return (
@@ -690,6 +703,7 @@ function SummaryStep({
                 horses={horses}
                 pick={pick}
                 peerConf={peerByRace[r.id] ?? null}
+                onEdit={() => onJumpToRace(idx)}
               />
             )
           })}
@@ -717,7 +731,7 @@ function SummaryStep({
 }
 
 function SummaryCard({
-  race, horses, pick, peerConf,
+  race, horses, pick, peerConf, onEdit,
 }: {
   race: Race
   horses: Horse[]
@@ -726,6 +740,8 @@ function SummaryCard({
    *  players have win-picked this race; in that case the FAV / 👥 / 🔥
    *  badges that depend on peer data are suppressed. */
   peerConf: RaceConfidence | null
+  /** Tap handler — jumps the wizard back to this race's step. */
+  onEdit: () => void
 }) {
 
   const slots: { slot: Slot; horseId: string | null }[] = [
@@ -737,7 +753,14 @@ function SummaryCard({
   const anyPicked = slots.some(s => s.horseId)
 
   return (
-    <li className="bg-white border border-[var(--border)] rounded-xl p-3 shadow-sm">
+    <li
+      role="button"
+      tabIndex={0}
+      onClick={onEdit}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEdit() } }}
+      aria-label={`Edit picks for race ${race.race_number}`}
+      className="cursor-pointer bg-white border border-[var(--border)] rounded-xl p-3 shadow-sm hover:bg-[var(--bg-card-hover)] hover:border-[var(--gold)]/50 active:scale-[0.99] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold)]"
+    >
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="min-w-0">
           <div className="text-[var(--text-muted)] text-[10px] uppercase tracking-wider font-bold">
@@ -747,11 +770,16 @@ function SummaryCard({
             {race.name || `Race ${race.race_number}`}
           </div>
         </div>
-        {race.is_featured && (
-          <span className="shrink-0 text-[10px] font-extrabold text-[var(--gold)] bg-amber-50 border border-[var(--gold)]/50 px-1.5 py-0.5 rounded">
-            ⭐ {race.featured_multiplier}X
+        <div className="shrink-0 flex items-center gap-1.5">
+          {race.is_featured && (
+            <span className="text-[10px] font-extrabold text-[var(--gold)] bg-amber-50 border border-[var(--gold)]/50 px-1.5 py-0.5 rounded">
+              ⭐ {race.featured_multiplier}X
+            </span>
+          )}
+          <span className="text-[10px] font-bold text-[var(--rose-dark)] uppercase tracking-wider">
+            ✏️ Edit
           </span>
-        )}
+        </div>
       </div>
       {!anyPicked ? (
         <div className="text-xs italic text-[var(--text-muted)]">
@@ -846,10 +874,19 @@ function PowerPlayStep({
   }), [races, picks])
 
   // Smart suggestions:
-  //   ×3 → race where my win pick has the highest peer agreement
-  //        (safer bet — crowd backs the same horse)
-  //   ×2 → highest-multiplier featured race, falling back to first picked race
+  //   ×3 → race where my win pick has the highest peer agreement (safer bet —
+  //        crowd backs the same horse). If nobody has 5+ picks yet, peerByRace
+  //        is empty for every race; fall back to the middle picked race so the
+  //        suggestion is never blank.
+  //   ×2 → highest-multiplier featured race, falling back to the last picked
+  //        race (typically the day's marquee event).
+  // Both branches always resolve to a real race id whenever pickedRaces is
+  // non-empty — the previous bug was `bestAgreementRaceId` staying null when
+  // peer data was unavailable.
   const suggestions = useMemo(() => {
+    if (pickedRaces.length === 0) return { threeX: null, twoX: null }
+
+    // ×3: peer-agreement winner, with a middle-race fallback.
     let bestAgreementRaceId: string | null = null
     let bestAgreement = -1
     for (const r of pickedRaces) {
@@ -860,11 +897,21 @@ function PowerPlayStep({
       const myPct = conf.pctByHorse[myPick.win_horse_id] ?? 0
       if (myPct > bestAgreement) { bestAgreement = myPct; bestAgreementRaceId = r.id }
     }
+    const middleIdx = Math.floor((pickedRaces.length - 1) / 2)
+    const threeX = bestAgreementRaceId ?? pickedRaces[middleIdx]?.id ?? null
+
+    // ×2: featured race wins; otherwise the last picked race.
     const featured = [...pickedRaces]
       .filter(r => r.is_featured)
       .sort((a, b) => b.featured_multiplier - a.featured_multiplier)[0]
-    const featuredRaceId = featured?.id ?? pickedRaces[0]?.id ?? null
-    return { threeX: bestAgreementRaceId, twoX: featuredRaceId }
+    let twoX = featured?.id ?? pickedRaces[pickedRaces.length - 1]?.id ?? null
+    // Don't suggest the same race for both slots.
+    if (twoX && twoX === threeX && pickedRaces.length > 1) {
+      const alt = pickedRaces.find(r => r.id !== threeX)
+      twoX = alt?.id ?? twoX
+    }
+
+    return { threeX, twoX }
   }, [pickedRaces, picks, peerByRace])
 
   const [activeSlot, setActiveSlot] = useState<'3x' | '2x'>('3x')
@@ -886,7 +933,14 @@ function PowerPlayStep({
   async function applyOne(slot: '3x' | '2x', raceId: string) {
     if (busy) return
     setBusy(true)
-    try { await onAssign(slot, raceId) } finally { setBusy(false) }
+    try {
+      await onAssign(slot, raceId)
+      // Auto-advance: once ×3 is freshly assigned, hop to the ×2 slot so the
+      // player doesn't have to hunt for the pill at the top of the screen.
+      // Only fires when the player is on the ×3 slot AND ×2 isn't already set
+      // — re-tapping ×3 to swap races shouldn't yank focus away.
+      if (slot === '3x' && !mult2x) setActiveSlot('2x')
+    } finally { setBusy(false) }
   }
 
   return (
