@@ -460,91 +460,6 @@ export default function PicksPage() {
     }, 3000)
   }
 
-  // Race tab strip: refs to each race card + active race tracker via IntersectionObserver.
-  const raceCardRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const tabRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
-  const tabStripRef = useRef<HTMLDivElement>(null)
-  const tabScrollerRef = useRef<HTMLDivElement>(null)
-  const [activeRaceId, setActiveRaceId] = useState<string | null>(null)
-  const [showLeftFade, setShowLeftFade] = useState(false)
-  const [showRightFade, setShowRightFade] = useState(false)
-
-  useEffect(() => {
-    if (races.length === 0) return
-    const observer = new IntersectionObserver(
-      entries => {
-        const visible = entries.filter(e => e.isIntersecting)
-        if (visible.length === 0) return
-        visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        const top = visible[0]
-        const id = top.target.getAttribute('data-race-id')
-        if (id) setActiveRaceId(id)
-      },
-      { rootMargin: '-80px 0px -60% 0px', threshold: 0 }
-    )
-    raceCardRefs.current.forEach(el => observer.observe(el))
-    return () => observer.disconnect()
-  }, [races])
-
-  // Keep the active tab visible inside the horizontally scrolling strip.
-  useEffect(() => {
-    if (!activeRaceId) return
-    const tab = tabRefs.current.get(activeRaceId)
-    tab?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-  }, [activeRaceId])
-
-  function scrollToRace(raceId: string) {
-    const el = raceCardRefs.current.get(raceId)
-    if (!el) return
-    const stripHeight = tabStripRef.current?.offsetHeight ?? 0
-    const cardTop = el.getBoundingClientRect().top + window.scrollY
-    window.scrollTo({ top: cardTop - stripHeight - 12, behavior: 'smooth' })
-  }
-
-  // Track scroll position of the tab strip to drive fade indicators + arrow visibility.
-  useEffect(() => {
-    const el = tabScrollerRef.current
-    if (!el) return
-    const update = () => {
-      const left = el.scrollLeft > 4
-      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4
-      // eslint-disable-next-line no-console
-      console.log('[tabs]', {
-        scrollLeft: el.scrollLeft,
-        clientWidth: el.clientWidth,
-        scrollWidth: el.scrollWidth,
-        racesCount: races.length,
-        showLeftFade: left,
-        showRightFade: right,
-      })
-      setShowLeftFade(left)
-      setShowRightFade(right)
-    }
-    // Optimistic bias: with many races we almost certainly overflow on every
-    // viewport, so show the right arrow immediately. Real measurements below
-    // override this once layout has settled.
-    if (races.length > 8) setShowRightFade(true)
-    update()
-    const t1 = setTimeout(update, 100)
-    const t2 = setTimeout(update, 300)
-    el.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-      el.removeEventListener('scroll', update)
-      window.removeEventListener('resize', update)
-    }
-  }, [races.length])
-
-  function scrollStripBy(direction: 'left' | 'right') {
-    const el = tabScrollerRef.current
-    if (!el || races.length === 0) return
-    const tabAvgWidth = el.scrollWidth / races.length
-    const delta = tabAvgWidth * 3 * (direction === 'left' ? -1 : 1)
-    el.scrollBy({ left: delta, behavior: 'smooth' })
-  }
-
   // Once all races have picks, prompt the player to head to /track.
   // sessionStorage flag prevents re-showing within the same browser session.
   const allPicksIn = useMemo(() => {
@@ -903,32 +818,33 @@ export default function PicksPage() {
       {/* Race Cards */}
       <section className="px-5">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
-            <h3 className="text-[var(--text-muted)] text-sm uppercase tracking-wider font-semibold">
-              Races
-            </h3>
-            {races.some(r => r.status === 'upcoming' || r.status === 'open') && (
+          {/* Manual "Pick All Races" trigger — top-right of the section.
+              No more "Races" h3 above it; the grid speaks for itself. */}
+          {races.some(r => r.status === 'upcoming' || r.status === 'open') && (
+            <div className="flex justify-end mb-2">
               <button
                 onClick={() => setWizardState({ open: true, markComplete: false })}
                 className="px-3 h-8 rounded-full bg-[var(--rose-dark)] text-white text-xs font-bold shadow-md hover:bg-[var(--rose-dark)]/90 active:scale-[0.97] transition-all inline-flex items-center gap-1"
               >
                 🏇 Pick All Races
               </button>
-            )}
-          </div>
+            </div>
+          )}
           {races.length === 0 ? (
             <div className="bg-white border border-[var(--border)] rounded-xl p-6 text-center text-[var(--text-muted)] shadow-sm">
               No races posted yet. The host will set them up before post time.
             </div>
           ) : (
             <>
-              {/* Scoring legend — sits directly above the Day Progress bar.
-                  The whole strip is the click target (chevron + dotted-underline
-                  hint) so the affordance feels cohesive instead of a separate
-                  (i) button hovering off to the side. */}
+              {/* Scoring legend — tappable strip; opens the scoring rules modal. */}
               <div className="mb-2 px-1">
                 <ScoringLegendStrip variant="full" />
               </div>
+
+              {/* Next-race countdown banner — points to the soonest pickable
+                  race so players see what's about to start without scanning
+                  the grid. Hidden when no upcoming/open races remain. */}
+              <NextRaceBanner races={races} now={now} onTap={raceId => setInfoModalRaceId(raceId)} />
 
               {/* Day progress bar */}
               {(() => {
@@ -960,73 +876,6 @@ export default function PicksPage() {
                 )
               })()}
 
-              {/* Race tab strip — sticky horizontal nav, light theme */}
-              <div
-                ref={tabStripRef}
-                className="sticky top-[52px] z-10 -mx-2 mb-3 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-b border-[var(--border)] rounded-b-lg"
-              >
-                <div className="relative">
-                  <div
-                    className={`pointer-events-none absolute left-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-r from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-transparent transition-opacity duration-200 ${showLeftFade ? 'opacity-100' : 'opacity-0'}`}
-                  />
-                  <div
-                    className={`pointer-events-none absolute right-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-l from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-transparent transition-opacity duration-200 ${showRightFade ? 'opacity-100' : 'opacity-0'}`}
-                  />
-                  {showLeftFade && (
-                    <button
-                      type="button"
-                      onClick={() => scrollStripBy('left')}
-                      aria-label="Scroll tabs left"
-                      className="flex absolute left-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--text-primary)] border border-[var(--border)] shadow-md text-lg font-bold leading-none hover:bg-[var(--rose-dark)] hover:text-white hover:border-[var(--rose-dark)] transition-colors"
-                    >
-                      ‹
-                    </button>
-                  )}
-                  {showRightFade && (
-                    <button
-                      type="button"
-                      onClick={() => scrollStripBy('right')}
-                      aria-label="Scroll tabs right"
-                      className="flex absolute right-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--text-primary)] border border-[var(--border)] shadow-md text-lg font-bold leading-none hover:bg-[var(--rose-dark)] hover:text-white hover:border-[var(--rose-dark)] transition-colors"
-                    >
-                      ›
-                    </button>
-                  )}
-                  <div
-                    ref={tabScrollerRef}
-                    className="flex gap-2 overflow-x-scroll px-12 py-2 [&::-webkit-scrollbar]:hidden"
-                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', touchAction: 'pan-x', WebkitOverflowScrolling: 'touch' }}
-                  >
-                    {races.map(r => {
-                      const active = r.id === activeRaceId
-                      const finished = r.status === 'finished'
-                      const locked = r.status === 'locked'
-                      const icon = finished ? '✅' : locked ? '🔒' : null
-                      const stateClass = active
-                        ? 'bg-[var(--rose-dark)] text-white font-bold shadow-md'
-                        : locked
-                          ? 'bg-gray-100 text-gray-500 border border-gray-300'
-                          : finished
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-white text-[var(--text-primary)] border border-[var(--border)] hover:bg-[var(--bg-card-hover)]'
-                      return (
-                        <button
-                          key={r.id}
-                          ref={el => {
-                            if (el) tabRefs.current.set(r.id, el)
-                            else tabRefs.current.delete(r.id)
-                          }}
-                          onClick={() => setInfoModalRaceId(r.id)}
-                          className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${stateClass}`}
-                        >
-                          {icon ? <span className="mr-1">{icon}</span> : null}R{r.race_number}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-
               {/* Compact race tile grid — replaces the old vertical card list */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {(() => {
@@ -1050,13 +899,8 @@ export default function PicksPage() {
                   }).map((race, idx) => (
                     <div
                       key={race.id}
-                      data-race-id={race.id}
                       data-tour-first={idx === 0 ? 'true' : undefined}
                       data-tour-featured={race.is_featured ? 'true' : undefined}
-                      ref={el => {
-                        if (el) raceCardRefs.current.set(race.id, el)
-                        else raceCardRefs.current.delete(race.id)
-                      }}
                     >
                       <RaceTile
                         race={race}
@@ -1268,6 +1112,70 @@ function PicksNavTab({
   )
 }
 
+// ----- NEXT RACE BANNER -----
+// Highlights the soonest pickable race (upcoming OR open) with a live H:MM:SS
+// countdown. Goes red/urgent when ≤ 5 minutes from post; stays gold otherwise.
+// Tapping the banner opens the race info modal so players can pick fast.
+function NextRaceBanner({
+  races, now, onTap,
+}: {
+  races: Race[]
+  now: number
+  onTap: (raceId: string) => void
+}) {
+  // Pick the soonest race that's still pickable. We don't include races
+  // already past post-time without a status flip — those resolve via the
+  // realtime races handler within seconds. Sort by post_time ascending and
+  // skip anything we couldn't parse.
+  const next = (() => {
+    const candidates = races
+      .filter(r => r.status === 'upcoming' || r.status === 'open')
+      .map(r => ({ race: r, t: parseLocalIso(r.post_time)?.getTime() ?? Infinity }))
+      .filter(x => Number.isFinite(x.t))
+      .sort((a, b) => a.t - b.t)
+    return candidates[0] ?? null
+  })()
+  if (!next) return null
+
+  const secs = Math.max(0, Math.floor((next.t - now) / 1000))
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  const countdown = secs <= 0
+    ? 'POST TIME'
+    : `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  // ≤5 minutes → urgent red; otherwise calmer rose-on-cream pill.
+  const urgent = secs > 0 && secs <= 5 * 60
+  const containerCls = urgent
+    ? 'bg-[var(--warning)] border-red-300 text-white animate-pulse'
+    : 'bg-white border-[var(--rose-dark)]/40 text-[var(--text-primary)]'
+  const countdownCls = urgent
+    ? 'text-white'
+    : 'text-[var(--rose-dark)]'
+
+  return (
+    <button
+      type="button"
+      onClick={() => onTap(next.race.id)}
+      className={`w-full mb-2 px-3 py-2 rounded-xl border-2 shadow-sm text-left flex items-center justify-between gap-3 transition-all hover:shadow-md ${containerCls}`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className={`text-[10px] uppercase font-extrabold tracking-wider ${urgent ? 'text-white/80' : 'text-[var(--text-muted)]'}`}>
+          Next race
+        </div>
+        <div className="font-semibold text-sm truncate">
+          R{next.race.race_number}{' '}
+          <span className={urgent ? 'text-white/85' : 'text-[var(--text-muted)]'}>·</span>{' '}
+          {next.race.name || `Race ${next.race.race_number}`}
+        </div>
+      </div>
+      <div className={`shrink-0 font-mono tabular-nums font-extrabold text-base leading-none ${countdownCls}`}>
+        {countdown}
+      </div>
+    </button>
+  )
+}
+
 // ----- RACE TILE — compact grid card -----
 function RaceTile({
   race, horses, pick, score, scoreRevealed, multiplier, peerConf, now, onOpen,
@@ -1291,7 +1199,9 @@ function RaceTile({
   const placeHorse = horses.find(h => h.finish_position === 2)
   const showHorse = horses.find(h => h.finish_position === 3)
 
-  // Live countdown — only meaningful for upcoming/open races.
+  // Coarse countdown — minute-level precision is enough on a tile; the
+  // banner above the grid carries the H:MM:SS for the imminent race.
+  // Format: "in Xh Ym", "in Xm", "in <1m", or "POST TIME" once it lands.
   const countdown = (() => {
     if (!upcoming) return null
     const target = parseLocalIso(race.post_time)
@@ -1300,9 +1210,12 @@ function RaceTile({
     if (secs <= 0) return { text: 'POST TIME', urgent: true }
     const h = Math.floor(secs / 3600)
     const m = Math.floor((secs % 3600) / 60)
-    const s = secs % 60
-    const text = h > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`
-    return { text, urgent: secs < 60 * 60 }
+    const text = h > 0
+      ? `in ${h}h ${m}m`
+      : m > 0
+        ? `in ${m}m`
+        : 'in <1m'
+    return { text, urgent: secs < 5 * 60 }
   })()
 
   const postTime = parseLocalIso(race.post_time)
@@ -1400,7 +1313,7 @@ function RaceTile({
     >
       <div className="flex items-start justify-between gap-1 mb-1">
         <div className="flex items-center gap-1">
-          <span className="text-[11px] font-extrabold text-[var(--text-muted)]">R{race.race_number}</span>
+          <span className="text-[11px] font-extrabold text-[var(--text-muted)]">Race {race.race_number}</span>
           {tokenChip}
         </div>
         {badge}
@@ -1408,15 +1321,21 @@ function RaceTile({
       <div className="font-semibold text-[var(--text-primary)] text-sm truncate" title={race.name}>
         {race.name || `Race ${race.race_number}`}
       </div>
-      <div className="text-[11px] text-[var(--text-muted)] mt-0.5 flex items-center gap-2">
-        {countdown ? (
-          <span className={`font-mono tabular-nums font-bold ${countdown.urgent ? 'text-[var(--warning)]' : 'text-[var(--gold)]'}`}>
-            {countdown.text}
-          </span>
-        ) : postTimeText ? (
-          <span>{postTimeText}</span>
-        ) : null}
-      </div>
+      {/* Post time always visible; the coarse countdown sits underneath it on
+          upcoming/open races only — locked/finished tiles drop the second row. */}
+      {postTimeText && (
+        <div className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-tight">
+          {postTimeText}
+          {countdown && (
+            <>
+              {' · '}
+              <span className={`font-bold ${countdown.urgent ? 'text-[var(--warning)]' : 'text-[var(--gold)]'}`}>
+                {countdown.text}
+              </span>
+            </>
+          )}
+        </div>
+      )}
       {/* Mini peer-confidence: only after the race locks (so the bar can't
           steer live picks) and only when 5+ players win-picked. */}
       {(locked || race.status === 'finished') && peerConf && (() => {
