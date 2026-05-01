@@ -2639,7 +2639,7 @@ function ResultsCard({
                           value={slot.val}
                           onChange={e => slot.set(e.target.value)}
                           onClick={stop}
-                          className="admin-input w-full text-sm h-12"
+                          className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] [&>option]:bg-[#1a2035] [&>option]:text-white"
                         >
                           <option value="">—</option>
                           {horses.filter(h => !h.scratched).map(h => (
