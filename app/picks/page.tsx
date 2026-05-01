@@ -11,6 +11,7 @@ import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import { WatermarkBG } from '@/components/WatermarkBG'
 import { computeBonus } from '@/lib/scoring'
 import { computePlayerBadges, type Badge } from '@/lib/badges'
+import { PickWizard } from '@/components/PickWizard'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 export default function PicksPage() {
@@ -48,8 +49,16 @@ export default function PicksPage() {
   // Rank/score toasts: top-of-screen feedback that auto-dismisses after 3s.
   type RankToast = { id: string; message: string; tone: 'green' | 'red' | 'gold' }
   const [rankToasts, setRankToasts] = useState<RankToast[]>([])
-  // Pick-All wizard
-  const [wizardOpen, setWizardOpen] = useState(false)
+  // Pick wizard — `markComplete` flips on the mandatory first-run open so we
+  // know to set players.wizard_completed when the user reaches the end. Manual
+  // re-runs from the "Pick All Races" button leave the flag alone.
+  const [wizardState, setWizardState] = useState<{ open: boolean; markComplete: boolean }>({
+    open: false,
+    markComplete: false,
+  })
+  // Guard so realtime player updates don't re-trigger the wizard after the
+  // user has dismissed it within this session.
+  const mandatoryWizardCheckedRef = useRef(false)
   // Picks ref: realtime callbacks need to read picks without going stale.
   const picksRef = useRef<Pick[]>([])
   useEffect(() => { picksRef.current = picks }, [picks])
@@ -425,6 +434,36 @@ export default function PicksPage() {
       .eq('id', player.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player?.id, event?.id, races.length])
+
+  // Mandatory wizard trigger — opens full-screen on first /picks load when the
+  // player hasn't completed it yet AND there's still at least one pickable race.
+  useEffect(() => {
+    if (loading) return
+    if (!player) return
+    if (mandatoryWizardCheckedRef.current) return
+    if (player.wizard_completed === true) return
+    mandatoryWizardCheckedRef.current = true
+    const hasPickable = races.some(r => r.status === 'upcoming' || r.status === 'open')
+    if (!hasPickable) return // spec: skip wizard if all game races are locked
+    setWizardState({ open: true, markComplete: true })
+  }, [loading, player, races])
+
+  async function handleWizardClose({ completed }: { completed: boolean }) {
+    const shouldMark =
+      wizardState.markComplete && completed && player && player.wizard_completed !== true
+    if (shouldMark && player) {
+      try {
+        await supabase
+          .from('players')
+          .update({ wizard_completed: true })
+          .eq('id', player.id)
+        setPlayer({ ...player, wizard_completed: true })
+      } catch (e) {
+        console.error('[picks] failed to mark wizard_completed', e)
+      }
+    }
+    setWizardState({ open: false, markComplete: false })
+  }
 
   // Rank/score toast plumbing. The useEffects that read myRank/myTotalScore/
   // effectiveRevealed live below those memos to avoid TDZ.
@@ -906,7 +945,7 @@ export default function PicksPage() {
             </h3>
             {races.some(r => r.status === 'upcoming' || r.status === 'open') && (
               <button
-                onClick={() => setWizardOpen(true)}
+                onClick={() => setWizardState({ open: true, markComplete: false })}
                 className="px-3 h-8 rounded-full bg-[var(--rose-dark)] text-white text-xs font-bold shadow-md hover:bg-[var(--rose-dark)]/90 active:scale-[0.97] transition-all inline-flex items-center gap-1"
               >
                 🏇 Pick All Races
@@ -1088,17 +1127,21 @@ export default function PicksPage() {
         )}
       </AnimatePresence>
 
-      {/* Pick All wizard */}
+      {/* Pick wizard — mandatory on first run, manual otherwise */}
       <AnimatePresence>
-        {wizardOpen && (
-          <PickAllWizard
+        {wizardState.open && (
+          <PickWizard
+            open={wizardState.open}
             races={races}
             horsesByRace={horsesByRace}
             picks={picks}
-            playerId={player.id}
+            allEventPicks={allEventPicks}
+            player={player}
             eventId={event.id}
+            multiplierVisible={event.multiplier_visible}
+            markCompleteOnFinish={wizardState.markComplete}
             onSaved={() => setPicksSavedToast(true)}
-            onClose={() => setWizardOpen(false)}
+            onClose={handleWizardClose}
           />
         )}
       </AnimatePresence>
@@ -2223,260 +2266,6 @@ function TokenAssignModal({
           )}
         </div>
       </motion.div>
-    </motion.div>
-  )
-}
-
-// ----- PICK ALL WIZARD -----
-function PickAllWizard({
-  races, horsesByRace, picks, playerId, eventId, onSaved, onClose,
-}: {
-  races: Race[]
-  horsesByRace: Record<string, Horse[]>
-  picks: Pick[]
-  playerId: string
-  eventId: string
-  onSaved?: () => void
-  onClose: () => void
-}) {
-  // Skip locked / finished races — wizard is only for races still accepting picks.
-  const wizardRaces = useMemo(
-    () => races.filter(r => r.status === 'upcoming' || r.status === 'open'),
-    [races]
-  )
-  const [stepIdx, setStepIdx] = useState(0)
-  const [direction, setDirection] = useState(1) // +1 forward, -1 backward
-  const [pendingHorseId, setPendingHorseId] = useState<string | null>(null)
-
-  const race = wizardRaces[stepIdx]
-  const horses = race ? (horsesByRace[race.id] ?? []) : []
-  const sortedHorses = useMemo(
-    () => [...horses].sort((a, b) => a.number - b.number),
-    [horses]
-  )
-  const existingPick = race ? picks.find(p => p.race_id === race.id) ?? null : null
-
-  if (!race) {
-    // No assignable races — show a quick empty state and an exit button.
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-[var(--dark)] flex flex-col items-center justify-center px-6 text-center"
-      >
-        <div className="text-5xl mb-3">✅</div>
-        <p className="text-white text-lg font-semibold">Every race is locked or finished.</p>
-        <button
-          onClick={onClose}
-          className="mt-6 h-12 px-8 rounded-full bg-[var(--gold)] text-[var(--dark)] font-bold"
-        >
-          Close
-        </button>
-      </motion.div>
-    )
-  }
-
-  const isLastStep = stepIdx === wizardRaces.length - 1
-  const isFirstStep = stepIdx === 0
-
-  async function applyQuickPick(slot: 'win' | 'place' | 'show', horseId: string) {
-    if (!race) return
-    setPendingHorseId(horseId)
-    try {
-      const cur = {
-        win: existingPick?.win_horse_id ?? null,
-        place: existingPick?.place_horse_id ?? null,
-        show: existingPick?.show_horse_id ?? null,
-      }
-      const isToggle = cur[slot] === horseId
-      if (cur.win === horseId) cur.win = null
-      if (cur.place === horseId) cur.place = null
-      if (cur.show === horseId) cur.show = null
-      cur[slot] = isToggle ? null : horseId
-
-      const payload = {
-        win_horse_id: cur.win,
-        place_horse_id: cur.place,
-        show_horse_id: cur.show,
-      }
-
-      if (existingPick) {
-        await supabase.from('picks').update(payload).eq('id', existingPick.id)
-      } else {
-        await supabase.from('picks').insert({
-          player_id: playerId,
-          race_id: race.id,
-          event_id: eventId,
-          ...payload,
-        })
-      }
-      onSaved?.()
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setPendingHorseId(null)
-    }
-  }
-
-  function goNext() {
-    if (isLastStep) {
-      onClose()
-      return
-    }
-    setDirection(1)
-    setStepIdx(i => i + 1)
-  }
-  function goPrev() {
-    if (isFirstStep) return
-    setDirection(-1)
-    setStepIdx(i => i - 1)
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-[var(--dark)] flex flex-col"
-    >
-      {/* Header + progress */}
-      <div className="px-5 pt-4 pb-3 border-b border-white/10">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[var(--gold)]/80 text-xs uppercase font-bold tracking-wider">
-            Race {stepIdx + 1} of {wizardRaces.length}
-          </span>
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none flex items-center justify-center"
-            aria-label="Close wizard"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-          <motion.div
-            className="h-full bg-[var(--gold)]"
-            initial={false}
-            animate={{ width: `${((stepIdx + 1) / wizardRaces.length) * 100}%` }}
-            transition={{ duration: 0.3 }}
-          />
-        </div>
-      </div>
-
-      {/* Race body — slide animated by step */}
-      <div className="flex-1 overflow-hidden relative">
-        <AnimatePresence mode="wait" initial={false} custom={direction}>
-          <motion.div
-            key={race.id}
-            custom={direction}
-            initial={{ x: direction > 0 ? '100%' : '-100%', opacity: 0.6 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: direction > 0 ? '-100%' : '100%', opacity: 0.6 }}
-            transition={{ type: 'spring', damping: 28, stiffness: 240 }}
-            className="absolute inset-0 overflow-y-auto"
-          >
-            <div className="px-5 pt-4 pb-6">
-              <div className="text-[var(--gold)]/80 text-xs uppercase font-bold tracking-wider">
-                Race {race.race_number}
-                {race.is_featured && (
-                  <span className="ml-2 text-[var(--gold)]">⭐ {race.featured_multiplier}X POINTS</span>
-                )}
-              </div>
-              <h3 className="font-serif text-2xl font-bold text-white mt-0.5 leading-tight">
-                {race.name || `Race ${race.race_number}`}
-              </h3>
-              <div className="text-white/50 text-xs mt-1 flex items-center gap-2 flex-wrap">
-                {race.distance && <span>{race.distance}</span>}
-                {(() => {
-                  const t = parseLocalIso(race.post_time)
-                  return t ? <span>{t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span> : null
-                })()}
-              </div>
-              <p className="mt-3 text-[11px] text-white/45">
-                Tap <span className="text-[var(--gold)]/80 font-semibold">1st / 2nd / 3rd</span> to set Win, Place, Show — picks save instantly.
-              </p>
-
-              <ul className="mt-3 divide-y divide-white/5">
-                {sortedHorses.map((h, i) => {
-                  const stripe = i % 2 === 1 ? 'bg-white/[0.03]' : ''
-                  const winSel = existingPick?.win_horse_id === h.id
-                  const placeSel = existingPick?.place_horse_id === h.id
-                  const showSel = existingPick?.show_horse_id === h.id
-                  const disabled = pendingHorseId === h.id || h.scratched
-                  return (
-                    <li key={h.id} className={`flex items-center gap-2 px-1 py-2.5 ${stripe}`}>
-                      <span className={`inline-flex items-center justify-center w-9 h-9 rounded-full font-bold text-sm tabular-nums shrink-0 ${
-                        h.scratched
-                          ? 'bg-white/5 text-white/30 border border-white/10'
-                          : 'bg-[var(--gold)]/10 text-[var(--gold)] border-2 border-[var(--gold)]/40'
-                      }`}>
-                        {h.number}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-medium flex items-center gap-1.5 ${h.scratched ? 'text-white/40 line-through' : 'text-white'}`}>
-                          <span className="truncate">{h.name}</span>
-                          {h.scratched && (
-                            <span className="shrink-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded leading-none no-underline">SCR</span>
-                          )}
-                        </div>
-                      </div>
-                      <span className={`w-12 text-right text-sm font-mono tabular-nums shrink-0 ${h.scratched ? 'text-white/30 line-through' : 'text-white/70'}`}>
-                        {h.morning_line_odds || '—'}
-                      </span>
-                      {!h.scratched && (
-                        <div className="flex gap-1 shrink-0">
-                          {(['win', 'place', 'show'] as const).map(slot => {
-                            const sel = slot === 'win' ? winSel : slot === 'place' ? placeSel : showSel
-                            const label = slot === 'win' ? '1st' : slot === 'place' ? '2nd' : '3rd'
-                            return (
-                              <button
-                                key={slot}
-                                type="button"
-                                onClick={() => applyQuickPick(slot, h.id)}
-                                disabled={disabled}
-                                className={`shrink-0 h-8 w-10 rounded-md text-[11px] font-bold uppercase tracking-wide transition-colors ${
-                                  sel
-                                    ? 'bg-[var(--gold)] text-[var(--dark)] shadow-md'
-                                    : 'bg-white/5 text-white/65 border border-white/15 hover:bg-white/10 hover:text-white'
-                                } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                              >
-                                {label}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
-                {sortedHorses.length === 0 && (
-                  <li className="px-3 py-6 text-center text-white/50 italic">No horses listed yet.</li>
-                )}
-              </ul>
-            </div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* Footer — Prev/Next */}
-      <div className="px-5 py-4 border-t border-white/10 bg-black/30 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={goPrev}
-          disabled={isFirstStep}
-          className="h-12 px-5 rounded-full border-2 border-white/20 text-white font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:border-white/40 transition-colors"
-        >
-          ← Previous
-        </button>
-        <button
-          type="button"
-          onClick={goNext}
-          className="h-12 px-6 rounded-full bg-[var(--gold)] text-[var(--dark)] font-bold shadow-md hover:bg-[var(--gold)]/90 active:scale-[0.98] transition-all"
-        >
-          {isLastStep ? 'Done ✓' : 'Next →'}
-        </button>
-      </div>
     </motion.div>
   )
 }

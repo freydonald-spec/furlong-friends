@@ -48,6 +48,10 @@ export type Player = {
   paid: boolean
   multiplier_3x_race_id: string | null
   multiplier_2x_race_id: string | null
+  /** True once the player has finished the mandatory first-run Pick Wizard.
+   *  Optional on the type so reads of pre-migration rows still work; new
+   *  writes always set it (see scripts/add-wizard-completed-column.sql). */
+  wizard_completed?: boolean
 }
 
 export type Pick = {

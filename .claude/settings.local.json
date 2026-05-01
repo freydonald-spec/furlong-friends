@@ -24,7 +24,9 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(sed -i '2273,2526d' /c/VSCode-projects/furlong/app/picks/page.tsx)",
+      "Bash(sed -n '2268,2280p' /c/VSCode-projects/furlong/app/picks/page.tsx)"
     ]
   }
 }
