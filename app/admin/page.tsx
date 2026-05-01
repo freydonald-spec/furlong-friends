@@ -549,7 +549,7 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="bg-[var(--dark)] border-2 border-red-500/60 rounded-2xl w-full max-w-md p-5 space-y-4"
+            className="bg-[#0F1629] border-2 border-red-500/60 rounded-2xl w-full max-w-md p-5 space-y-4"
           >
             <div>
               <h3 className="font-serif text-2xl font-bold text-red-300">Delete Event</h3>

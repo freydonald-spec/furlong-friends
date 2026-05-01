@@ -20,7 +20,9 @@ export function WatchPartyBadge({ className = '' }: { className?: string }) {
           lineHeight: 1.8,
         }}
       >
-        <span className="text-white/55">Powered by </span>
+        {/* Use --text-muted (#6B7280) so the prefix stays legible on both
+            the dark splash pages and the light /picks + /leaderboard pages. */}
+        <span className="text-[var(--text-muted)]">Powered by </span>
         WatchParty.Games
       </span>
     </a>

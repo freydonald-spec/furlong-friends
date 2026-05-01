@@ -712,7 +712,7 @@ export default function PicksPage() {
       <main className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="text-5xl mb-3 animate-pulse">🏇</div>
-          <p className="text-white/70 text-lg">Loading the field...</p>
+          <p className="text-[var(--text-muted)] text-lg">Loading the field...</p>
         </div>
       </main>
     )
@@ -722,7 +722,7 @@ export default function PicksPage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-6 text-center">
         <div>
-          <p className="text-white/80 mb-4">{error ?? "Couldn't find your player record."}</p>
+          <p className="text-[var(--text-primary)] mb-4">{error ?? "Couldn't find your player record."}</p>
           <Link href="/join" className="inline-block px-6 h-12 leading-[3rem] rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold">
             Join the game
           </Link>
@@ -1205,7 +1205,7 @@ export default function PicksPage() {
             transition={{ type: 'spring', damping: 24, stiffness: 240 }}
             className="fixed bottom-14 left-0 right-0 z-20 px-3 pb-2"
           >
-            <div className="max-w-2xl mx-auto bg-gradient-to-r from-[var(--gold)] to-[#E8C96A] text-[var(--dark)] rounded-xl px-4 py-3 shadow-lg flex items-center justify-between gap-3 border-2 border-[var(--gold)]/80">
+            <div className="max-w-2xl mx-auto bg-gradient-to-r from-[var(--gold)] to-[#E8C96A] text-[var(--text-primary)] rounded-xl px-4 py-3 shadow-lg flex items-center justify-between gap-3 border-2 border-[var(--gold)]/80">
               <Link
                 href="/track"
                 onClick={dismissAllPicksNudge}
@@ -1216,7 +1216,7 @@ export default function PicksPage() {
               <button
                 onClick={dismissAllPicksNudge}
                 aria-label="Dismiss"
-                className="text-[var(--dark)]/80 hover:text-[var(--dark)] font-bold text-lg leading-none px-2"
+                className="text-[var(--text-primary)]/80 hover:text-[var(--text-primary)] font-bold text-lg leading-none px-2"
               >✕</button>
             </div>
           </motion.div>
@@ -2229,34 +2229,34 @@ function TokenAssignModal({
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center"
       onClick={onClose}
     >
       <motion.div
         initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 26, stiffness: 200 }}
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--dark)] border-t-2 sm:border-2 border-[var(--gold)]/40 sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md max-h-[80vh] overflow-hidden flex flex-col"
+        className="bg-white border-t-2 sm:border-2 border-[var(--border)] sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md max-h-[80vh] overflow-hidden flex flex-col shadow-xl"
       >
-        <div className="px-5 pt-4 pb-3 border-b border-white/10 flex items-center justify-between">
-          <h3 className="font-serif text-xl font-bold text-white">Assign your {type} token</h3>
-          <button onClick={onClose} className="text-white/60 hover:text-white text-xl">✕</button>
+        <div className="px-5 pt-4 pb-3 border-b border-[var(--border)] flex items-center justify-between">
+          <h3 className="font-serif text-xl font-bold text-[var(--text-primary)]">Assign your {type} token</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xl">✕</button>
         </div>
 
-        <div className="overflow-y-auto p-4 space-y-2">
+        <div className="overflow-y-auto p-4 space-y-2 bg-[var(--bg-primary)]">
           {eligibleRaces.length === 0 ? (
-            <p className="text-white/60 text-center py-6">No races available to assign to right now.</p>
+            <p className="text-[var(--text-muted)] text-center py-6">No races available to assign to right now.</p>
           ) : eligibleRaces.map(race => {
             const isCurrent = currentRaceId === race.id
             return (
               <button
                 key={race.id}
                 onClick={() => onAssign(race.id)}
-                className={`w-full text-left p-3 rounded-xl border-2 transition-all min-h-[60px] flex justify-between items-center ${isCurrent ? 'border-[var(--gold)] bg-[var(--gold)]/15' : 'border-white/15 bg-white/5 hover:border-[var(--gold)]/60'}`}
+                className={`w-full text-left p-3 rounded-xl border-2 transition-all min-h-[60px] flex justify-between items-center ${isCurrent ? 'border-[var(--gold)] bg-amber-50' : 'border-[var(--border)] bg-white hover:border-[var(--gold)]/60 hover:bg-[var(--bg-card-hover)]'}`}
               >
                 <div>
-                  <div className="text-white/60 text-xs">RACE {race.race_number}</div>
-                  <div className="text-white font-semibold">{race.name || `Race ${race.race_number}`}</div>
+                  <div className="text-[var(--text-muted)] text-xs">RACE {race.race_number}</div>
+                  <div className="text-[var(--text-primary)] font-semibold">{race.name || `Race ${race.race_number}`}</div>
                   {race.is_featured && <div className="text-[var(--gold)] text-xs">⭐ {race.featured_multiplier}X POINTS</div>}
                 </div>
                 {isCurrent && <span className="text-[var(--gold)] text-xl">✓</span>}
@@ -2266,7 +2266,7 @@ function TokenAssignModal({
           {currentRaceId && (
             <button
               onClick={() => onAssign(null)}
-              className="w-full p-3 rounded-xl border-2 border-red-500/40 bg-red-500/10 text-red-300 font-semibold min-h-[48px]"
+              className="w-full p-3 rounded-xl border-2 border-red-300 bg-red-50 text-red-700 font-semibold min-h-[48px]"
             >
               Remove assignment
             </button>
@@ -2416,28 +2416,28 @@ function TourOverlay({
           {placeBelow ? '↑' : '↓'}
         </div>
 
-        <div className="bg-[var(--dark)] border-2 border-[var(--gold)]/60 rounded-2xl p-5 shadow-2xl shadow-[var(--gold)]/20">
-          <div className="text-[10px] text-[var(--gold)]/70 font-bold uppercase tracking-wider mb-1">
+        <div className="bg-white border-2 border-[var(--gold)]/60 rounded-2xl p-5 shadow-2xl shadow-[var(--gold)]/20">
+          <div className="text-[10px] text-[var(--gold)] font-bold uppercase tracking-wider mb-1">
             Step {stepIndex + 1} of {totalSteps}
           </div>
-          <h3 className="font-serif text-xl text-white font-bold mb-2 leading-tight">
+          <h3 className="font-serif text-xl text-[var(--text-primary)] font-bold mb-2 leading-tight">
             {title}
           </h3>
-          <p className="text-white/75 text-sm leading-relaxed mb-4">
+          <p className="text-[var(--text-muted)] text-sm leading-relaxed mb-4">
             {body}
           </p>
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={onSkip}
-              className="text-white/55 hover:text-white text-sm font-semibold underline-offset-2 hover:underline"
+              className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm font-semibold underline-offset-2 hover:underline"
             >
               Skip Tour
             </button>
             <button
               type="button"
               onClick={onNext}
-              className="px-5 h-10 rounded-full bg-[var(--gold)] text-[var(--dark)] font-bold text-sm shadow-md hover:bg-[var(--gold)]/90 active:scale-[0.97] transition-all"
+              className="px-5 h-10 rounded-full bg-[var(--gold)] text-[var(--text-primary)] font-bold text-sm shadow-md hover:bg-[var(--gold)]/90 active:scale-[0.97] transition-all"
             >
               {isLastStep ? 'Got it! 🏇' : 'Next →'}
             </button>
@@ -2463,20 +2463,20 @@ function ChangeAvatarModal({
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center"
     >
       <motion.div
         initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 26, stiffness: 200 }}
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--dark)] border-t-2 sm:border-2 border-[var(--gold)]/40 sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md max-h-[88vh] overflow-hidden flex flex-col"
+        className="bg-white border-t-2 sm:border-2 border-[var(--border)] sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md max-h-[88vh] overflow-hidden flex flex-col shadow-xl"
       >
-        <div className="px-5 pt-4 pb-3 border-b border-white/10 flex items-center justify-between">
-          <h3 className="font-serif text-xl font-bold text-white">Change Avatar</h3>
-          <button onClick={onClose} className="text-white/60 hover:text-white text-xl">✕</button>
+        <div className="px-5 pt-4 pb-3 border-b border-[var(--border)] flex items-center justify-between">
+          <h3 className="font-serif text-xl font-bold text-[var(--text-primary)]">Change Avatar</h3>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xl">✕</button>
         </div>
-        <div className="overflow-y-auto p-3">
-          <p className="text-white/55 text-xs text-center mb-3">
+        <div className="overflow-y-auto p-3 bg-[var(--bg-primary)]">
+          <p className="text-[var(--text-muted)] text-xs text-center mb-3">
             Tap a new avatar to switch. Grayed-out avatars are taken by other players.
           </p>
           <div className="grid grid-cols-5 gap-2">
@@ -2497,16 +2497,16 @@ function ChangeAvatarModal({
                   className={`
                     relative aspect-square flex items-center justify-center rounded-xl border-2 transition-all min-h-[64px]
                     ${isCurrent
-                      ? 'border-[var(--gold)] bg-[var(--gold)]/20'
+                      ? 'border-[var(--gold)] bg-amber-50'
                       : taken
-                        ? 'border-white/10 bg-white/5 opacity-40'
-                        : 'border-white/15 bg-white/5 hover:border-[var(--gold)]/60 hover:bg-white/10'}
+                        ? 'border-[var(--border)] bg-gray-50 opacity-40'
+                        : 'border-[var(--border)] bg-white hover:border-[var(--gold)]/60 hover:bg-[var(--bg-card-hover)]'}
                     ${isPending ? 'opacity-50' : ''}
                   `}
                 >
                   <AvatarIcon id={av.id} className="w-full h-full p-0.5" />
                   {isCurrent && (
-                    <span className="absolute top-0.5 right-0.5 bg-[var(--gold)] text-black text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">✓</span>
+                    <span className="absolute top-0.5 right-0.5 bg-[var(--gold)] text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">✓</span>
                   )}
                 </button>
               )
@@ -2519,7 +2519,7 @@ function ChangeAvatarModal({
                 <button
                   type="button"
                   onClick={sampler.shuffle}
-                  className="text-sm text-white/70 hover:text-white font-medium"
+                  className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] font-medium"
                 >
                   🔀 Shuffle
                 </button>
@@ -2533,11 +2533,11 @@ function ChangeAvatarModal({
               </>
             ) : (
               <>
-                <span className="text-sm text-white/50">Showing all {sampler.total}</span>
+                <span className="text-sm text-[var(--text-muted)]">Showing all {sampler.total}</span>
                 <button
                   type="button"
                   onClick={sampler.collapse}
-                  className="text-sm text-white/70 hover:text-white font-medium"
+                  className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] font-medium"
                 >
                   Show fewer
                 </button>

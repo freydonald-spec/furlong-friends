@@ -663,7 +663,7 @@ export default function TrackPage() {
               <motion.div
                 initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
                 onClick={e => e.stopPropagation()}
-                className={`bg-[var(--dark)] border-2 ${isWinner ? 'border-[var(--gold)]' : 'border-[var(--gold)]/50'} rounded-2xl p-6 text-center max-w-sm w-full ${isWinner ? 'shadow-[0_0_60px_rgba(201,168,76,0.6)]' : ''}`}
+                className={`bg-[#0F1629] border-2 ${isWinner ? 'border-[var(--gold)]' : 'border-[var(--gold)]/50'} rounded-2xl p-6 text-center max-w-sm w-full ${isWinner ? 'shadow-[0_0_60px_rgba(201,168,76,0.6)]' : ''}`}
               >
                 {isWinner && (
                   <div className="text-[var(--gold)] font-serif italic font-extrabold text-3xl mb-2 tracking-wide">

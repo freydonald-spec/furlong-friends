@@ -141,7 +141,7 @@ export default function LoginPage() {
       <main className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="text-5xl mb-3 animate-pulse">🔑</div>
-          <p className="text-white/70 text-lg">Looking up the field...</p>
+          <p className="text-[var(--text-muted)] text-lg">Looking up the field...</p>
         </div>
       </main>
     )
@@ -151,10 +151,10 @@ export default function LoginPage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-6 text-center">
         <div>
-          <p className="text-white/80 mb-4">{loadError}</p>
+          <p className="text-[var(--text-primary)] mb-4">{loadError}</p>
           <Link
             href="/"
-            className="inline-block px-6 h-12 leading-[3rem] rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold"
+            className="inline-block px-6 h-12 leading-[3rem] rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold shadow-md"
           >
             Home
           </Link>
@@ -167,17 +167,17 @@ export default function LoginPage() {
     <main className="min-h-screen flex flex-col px-5 py-8">
       <div className="w-full max-w-md mx-auto flex-1 flex flex-col">
         <div className="flex items-center mb-6">
-          <Link href="/" className="text-white/60 hover:text-white text-sm">← Back</Link>
+          <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm">← Back</Link>
         </div>
 
         {!match ? (
           <div className="flex-1 flex flex-col justify-center">
             <div className="text-center mb-8">
               <div className="text-5xl mb-3">🔑</div>
-              <h1 className="font-serif text-4xl font-bold text-white mb-2">Log Back In</h1>
-              <p className="text-white/70 text-lg">Type your name to restore your session</p>
+              <h1 className="font-serif text-4xl font-bold text-[var(--text-primary)] mb-2">Log Back In</h1>
+              <p className="text-[var(--text-muted)] text-lg">Type your name to restore your session</p>
               {event && (
-                <p className="text-[var(--gold)]/80 text-sm mt-2 font-serif italic">{event.name}</p>
+                <p className="text-[var(--gold)] text-sm mt-2 font-serif italic">{event.name}</p>
               )}
             </div>
 
@@ -189,25 +189,25 @@ export default function LoginPage() {
                 placeholder="Your name"
                 maxLength={28}
                 autoFocus
-                className="w-full h-14 px-5 rounded-xl bg-white/10 border-2 border-[var(--gold)]/30 text-white text-lg placeholder:text-white/40 focus:outline-none focus:border-[var(--gold)] transition-colors"
+                className="w-full h-14 px-5 rounded-xl bg-white border-2 border-[var(--border)] text-[var(--text-primary)] text-lg placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--gold)] transition-colors shadow-sm"
                 onKeyDown={e => { if (e.key === 'Enter' && name.trim()) void lookup() }}
               />
               <button
                 onClick={() => void lookup()}
                 disabled={!name.trim() || searching}
-                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all shadow-md"
               >
                 {searching ? 'Searching…' : 'Find me →'}
               </button>
 
               {notFoundFor && (
-                <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 text-center mt-4">
-                  <p className="text-amber-200 text-sm">
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-center mt-4">
+                  <p className="text-amber-800 text-sm">
                     No player named <span className="font-semibold">&ldquo;{notFoundFor}&rdquo;</span> in this event.
                   </p>
                   <Link
                     href="/join"
-                    className="inline-block mt-2 text-[var(--gold)] hover:text-white text-sm font-semibold underline underline-offset-4"
+                    className="inline-block mt-2 text-[var(--rose-dark)] hover:text-[var(--rose-dark)]/80 text-sm font-semibold underline underline-offset-4"
                   >
                     Join as a new player →
                   </Link>
@@ -215,7 +215,7 @@ export default function LoginPage() {
               )}
 
               <div className="text-center pt-2">
-                <Link href="/join" className="text-white/55 hover:text-white text-sm underline underline-offset-4">
+                <Link href="/join" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm underline underline-offset-4">
                   Haven&apos;t joined yet? Sign up
                 </Link>
               </div>
@@ -228,22 +228,22 @@ export default function LoginPage() {
                 id={match.avatar}
                 className="w-32 h-32 mx-auto rounded-2xl shadow-lg mb-4"
               />
-              <h1 className="font-serif text-3xl font-bold text-white mb-1">Welcome back,</h1>
+              <h1 className="font-serif text-3xl font-bold text-[var(--text-primary)] mb-1">Welcome back,</h1>
               <h2 className="font-serif text-3xl font-bold text-[var(--gold)] mb-4 truncate">
                 {match.name}!
               </h2>
-              <div className="inline-flex items-center gap-6 bg-white/5 border border-[var(--gold)]/30 rounded-xl px-5 py-3">
+              <div className="inline-flex items-center gap-6 bg-white border border-[var(--border)] rounded-xl px-5 py-3 shadow-sm">
                 <div>
                   <div className="text-[var(--gold)] text-2xl font-bold leading-none">{match.score}</div>
-                  <div className="text-white/60 text-xs uppercase tracking-wide">Points</div>
+                  <div className="text-[var(--text-muted)] text-xs uppercase tracking-wide">Points</div>
                 </div>
-                <div className="w-px h-8 bg-white/15" />
+                <div className="w-px h-8 bg-[var(--border)]" />
                 <div>
                   <div className="text-[var(--gold)] text-2xl font-bold leading-none">
                     #{match.rank}
-                    <span className="text-white/50 text-sm font-normal">{' '}/ {match.totalPlayers}</span>
+                    <span className="text-[var(--text-muted)] text-sm font-normal">{' '}/ {match.totalPlayers}</span>
                   </div>
-                  <div className="text-white/60 text-xs uppercase tracking-wide">Rank</div>
+                  <div className="text-[var(--text-muted)] text-xs uppercase tracking-wide">Rank</div>
                 </div>
               </div>
             </div>
@@ -251,13 +251,13 @@ export default function LoginPage() {
             <div className="space-y-3">
               <button
                 onClick={() => restoreSession(match)}
-                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all shadow-md"
               >
                 🏇 That&apos;s me — Let&apos;s play!
               </button>
               <button
                 onClick={() => { setMatch(null); setName(''); setNotFoundFor(null) }}
-                className="w-full text-center text-white/60 hover:text-white text-sm underline underline-offset-4 py-2"
+                className="w-full text-center text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm underline underline-offset-4 py-2"
               >
                 Not me — use a different name
               </button>

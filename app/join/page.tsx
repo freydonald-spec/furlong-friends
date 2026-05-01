@@ -231,7 +231,7 @@ export default function JoinPage() {
       <main className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="text-5xl mb-3 animate-pulse">🐎</div>
-          <p className="text-white/70 text-lg">Saddling up...</p>
+          <p className="text-[var(--text-muted)] text-lg">Saddling up...</p>
         </div>
       </main>
     )
@@ -242,11 +242,11 @@ export default function JoinPage() {
       <div className="w-full max-w-md mx-auto flex-1 flex flex-col">
         {/* Header */}
         <div className="flex items-center mb-6">
-          <Link href="/" className="text-white/60 hover:text-white text-sm">← Back</Link>
+          <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm">← Back</Link>
         </div>
 
         {error && (
-          <div className="bg-red-900/30 border border-red-500/40 rounded-xl p-3 mb-4 text-red-200 text-sm text-center">
+          <div className="bg-red-50 border border-red-300 rounded-xl p-3 mb-4 text-red-700 text-sm text-center">
             {error}
           </div>
         )}
@@ -255,10 +255,10 @@ export default function JoinPage() {
           <div className="flex-1 flex flex-col justify-center">
             <div className="text-center mb-8">
               <div className="text-5xl mb-3">🎩</div>
-              <h1 className="font-serif text-4xl font-bold text-white mb-2">Welcome</h1>
-              <p className="text-white/70 text-lg">What should we call you?</p>
+              <h1 className="font-serif text-4xl font-bold text-[var(--text-primary)] mb-2">Welcome</h1>
+              <p className="text-[var(--text-muted)] text-lg">What should we call you?</p>
               {event && (
-                <p className="text-[var(--gold)]/80 text-sm mt-2 font-serif italic">
+                <p className="text-[var(--gold)] text-sm mt-2 font-serif italic">
                   {event.name}
                 </p>
               )}
@@ -272,18 +272,18 @@ export default function JoinPage() {
                 placeholder="Your name"
                 maxLength={28}
                 autoFocus
-                className="w-full h-14 px-5 rounded-xl bg-white/10 border-2 border-[var(--gold)]/30 text-white text-lg placeholder:text-white/40 focus:outline-none focus:border-[var(--gold)] transition-colors"
+                className="w-full h-14 px-5 rounded-xl bg-white border-2 border-[var(--border)] text-[var(--text-primary)] text-lg placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--gold)] transition-colors shadow-sm"
                 onKeyDown={e => { if (e.key === 'Enter' && name.trim()) void handleContinue() }}
               />
               <button
                 onClick={() => void handleContinue()}
                 disabled={!name.trim() || continuing}
-                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all shadow-md"
               >
                 {continuing ? 'Checking…' : 'Continue →'}
               </button>
               <div className="text-center pt-2">
-                <Link href="/login" className="text-white/55 hover:text-white text-sm underline underline-offset-4">
+                <Link href="/login" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm underline underline-offset-4">
                   Already joined? Log back in
                 </Link>
               </div>
@@ -298,26 +298,26 @@ export default function JoinPage() {
                 id={welcomeMatch.avatar}
                 className="w-32 h-32 mx-auto rounded-2xl shadow-lg mb-4"
               />
-              <h1 className="font-serif text-3xl font-bold text-white mb-1">Welcome back,</h1>
+              <h1 className="font-serif text-3xl font-bold text-[var(--text-primary)] mb-1">Welcome back,</h1>
               <h2 className="font-serif text-3xl font-bold text-[var(--gold)] mb-4 truncate">
                 {welcomeMatch.name}!
               </h2>
-              <div className="inline-flex items-center gap-6 bg-white/5 border border-[var(--gold)]/30 rounded-xl px-5 py-3">
+              <div className="inline-flex items-center gap-6 bg-white border border-[var(--border)] rounded-xl px-5 py-3 shadow-sm">
                 <div>
                   <div className="text-[var(--gold)] text-2xl font-bold leading-none">
                     {welcomeMatch.score}
                   </div>
-                  <div className="text-white/60 text-xs uppercase tracking-wide">Points</div>
+                  <div className="text-[var(--text-muted)] text-xs uppercase tracking-wide">Points</div>
                 </div>
-                <div className="w-px h-8 bg-white/15" />
+                <div className="w-px h-8 bg-[var(--border)]" />
                 <div>
                   <div className="text-[var(--gold)] text-2xl font-bold leading-none">
                     #{welcomeMatch.rank}
-                    <span className="text-white/50 text-sm font-normal">
+                    <span className="text-[var(--text-muted)] text-sm font-normal">
                       {' '}/ {welcomeMatch.totalPlayers}
                     </span>
                   </div>
-                  <div className="text-white/60 text-xs uppercase tracking-wide">Rank</div>
+                  <div className="text-[var(--text-muted)] text-xs uppercase tracking-wide">Rank</div>
                 </div>
               </div>
             </div>
@@ -327,7 +327,7 @@ export default function JoinPage() {
                 onClick={() =>
                   restoreSession({ id: welcomeMatch.id, name: welcomeMatch.name })
                 }
-                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+                className="w-full h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-xl hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all shadow-md"
               >
                 🏇 That&apos;s me — Let&apos;s play!
               </button>
@@ -337,7 +337,7 @@ export default function JoinPage() {
                   setName('')
                   setStep('name')
                 }}
-                className="w-full text-center text-white/60 hover:text-white text-sm underline underline-offset-4 py-2"
+                className="w-full text-center text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm underline underline-offset-4 py-2"
               >
                 Not me — use a different name
               </button>
@@ -348,12 +348,12 @@ export default function JoinPage() {
         {step === 'avatar' && (
           <div className="flex-1 flex flex-col">
             <div className="text-center mb-5">
-              <h1 className="font-serif text-3xl font-bold text-white">Choose Your Avatar</h1>
-              <p className="text-white/60 mt-1 text-sm">
+              <h1 className="font-serif text-3xl font-bold text-[var(--text-primary)]">Choose Your Avatar</h1>
+              <p className="text-[var(--text-muted)] mt-1 text-sm">
                 Hi <span className="text-[var(--gold)] font-semibold">{name}</span>! Pick your Derby persona
               </p>
               {taken.length > 0 && (
-                <p className="text-white/40 text-xs mt-1">
+                <p className="text-[var(--text-muted)] text-xs mt-1">
                   Already taken? Tap to rejoin as that player
                 </p>
               )}
@@ -371,10 +371,10 @@ export default function JoinPage() {
                     className={`
                       relative aspect-square flex items-center justify-center rounded-xl border-2 transition-all min-h-[64px]
                       ${selected
-                        ? 'border-[var(--gold)] bg-[var(--gold)]/20 scale-105'
+                        ? 'border-[var(--gold)] bg-amber-50 scale-105'
                         : t
-                          ? 'border-white/10 bg-white/5 opacity-50 hover:opacity-80'
-                          : 'border-white/15 bg-white/5 hover:border-[var(--gold)]/60 hover:bg-white/10'}
+                          ? 'border-[var(--border)] bg-gray-50 opacity-50 hover:opacity-80'
+                          : 'border-[var(--border)] bg-white hover:border-[var(--gold)]/60 hover:bg-[var(--bg-card-hover)]'}
                     `}
                   >
                     <AvatarIcon id={avatar.id} className="w-full h-full p-0.5" />
@@ -389,7 +389,7 @@ export default function JoinPage() {
                   <button
                     type="button"
                     onClick={sampler.shuffle}
-                    className="text-sm text-white/70 hover:text-white font-medium"
+                    className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] font-medium"
                   >
                     🔀 Shuffle
                   </button>
@@ -403,11 +403,11 @@ export default function JoinPage() {
                 </>
               ) : (
                 <>
-                  <span className="text-sm text-white/50">Showing all {sampler.total}</span>
+                  <span className="text-sm text-[var(--text-muted)]">Showing all {sampler.total}</span>
                   <button
                     type="button"
                     onClick={sampler.collapse}
-                    className="text-sm text-white/70 hover:text-white font-medium"
+                    className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] font-medium"
                   >
                     Show fewer
                   </button>
@@ -417,7 +417,7 @@ export default function JoinPage() {
 
             <div className="mt-auto space-y-3">
               {selectedAvatar && (
-                <p className="text-center text-white/80 text-sm">
+                <p className="text-center text-[var(--text-primary)] text-sm">
                   You picked: <span className="text-[var(--gold)] font-semibold">
                     {AVATARS.find(a => a.id === selectedAvatar)?.label}
                   </span>
@@ -427,14 +427,14 @@ export default function JoinPage() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setStep('name')}
-                  className="h-14 px-6 rounded-full border-2 border-white/20 text-white/70 font-medium hover:border-white/40 transition-colors"
+                  className="h-14 px-6 rounded-full border-2 border-[var(--border)] text-[var(--text-muted)] font-medium hover:border-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   ← Back
                 </button>
                 <button
                   onClick={handleJoin}
                   disabled={!selectedAvatar || submitting}
-                  className="flex-1 h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-lg disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all"
+                  className="flex-1 h-14 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold text-lg disabled:opacity-40 hover:bg-[var(--rose-dark)]/85 active:scale-[0.98] transition-all shadow-md"
                 >
                   {submitting ? 'Joining…' : '🏁 Join Game'}
                 </button>
@@ -451,7 +451,7 @@ export default function JoinPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-6"
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6"
             onClick={() => setRejoinCandidate(null)}
           >
             <motion.div
@@ -459,21 +459,21 @@ export default function JoinPage() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
               onClick={e => e.stopPropagation()}
-              className="bg-[var(--dark)] border-2 border-[var(--gold)]/40 rounded-2xl p-6 max-w-sm w-full"
+              className="bg-white border-2 border-[var(--border)] rounded-2xl p-6 max-w-sm w-full shadow-2xl"
             >
               <div className="text-center">
                 <AvatarIcon id={rejoinCandidate.avatar} className="w-20 h-20 mx-auto mb-3 rounded-xl" />
-                <h3 className="font-serif text-2xl font-bold text-white mb-1">
+                <h3 className="font-serif text-2xl font-bold text-[var(--text-primary)] mb-1">
                   Rejoin as {rejoinCandidate.name}?
                 </h3>
-                <p className="text-white/60 text-sm mb-5">
-                  This avatar belongs to <span className="text-[var(--gold)]">{rejoinCandidate.name}</span>.
+                <p className="text-[var(--text-muted)] text-sm mb-5">
+                  This avatar belongs to <span className="text-[var(--gold)] font-semibold">{rejoinCandidate.name}</span>.
                   Continue if that&apos;s you.
                 </p>
                 <div className="flex gap-3">
                   <button
                     onClick={() => setRejoinCandidate(null)}
-                    className="flex-1 h-12 rounded-full border-2 border-white/20 text-white/70 font-medium"
+                    className="flex-1 h-12 rounded-full border-2 border-[var(--border)] text-[var(--text-muted)] font-medium hover:text-[var(--text-primary)] hover:border-[var(--text-muted)]"
                   >
                     Not me
                   </button>
@@ -483,7 +483,7 @@ export default function JoinPage() {
                       setRejoinCandidate(null)
                       restoreSession({ id: c.id, name: c.name })
                     }}
-                    className="flex-1 h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold"
+                    className="flex-1 h-12 rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold shadow-md"
                   >
                     Yes, that&apos;s me
                   </button>
