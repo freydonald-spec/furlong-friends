@@ -27,17 +27,17 @@ export function ScoringLegendStrip({ variant = 'full', className }: Props) {
         onClick={() => setOpen(true)}
         aria-label="View scoring details"
         className={`
-          group inline-flex items-center gap-1 text-[10px] font-semibold
+          group inline-flex items-center gap-1 font-semibold
           text-[var(--text-muted)]
           rounded-md
           ${compact
-            ? 'flex-nowrap whitespace-nowrap'
-            : 'flex-wrap gap-x-1 gap-y-0.5 w-full'}
+            ? 'text-[10px] flex-nowrap whitespace-nowrap'
+            : 'text-sm flex-wrap gap-x-1.5 gap-y-0.5 w-full'}
           hover:text-[var(--text-primary)] cursor-pointer
           ${className ?? ''}
         `}
       >
-        <span className="inline-flex items-center flex-wrap gap-x-1 gap-y-0.5 underline decoration-dotted decoration-[var(--text-muted)]/40 underline-offset-4 group-hover:decoration-[var(--text-primary)]/70">
+        <span className={`inline-flex items-center flex-wrap underline decoration-dotted decoration-[var(--text-muted)]/40 underline-offset-4 group-hover:decoration-[var(--text-primary)]/70 ${compact ? 'gap-x-1 gap-y-0.5' : 'gap-x-1.5 gap-y-0.5'}`}>
           <span><span className="text-[var(--success)] font-bold">W=5</span></span>
           <span className="opacity-50">·</span>
           <span><span className="text-[var(--gold)] font-bold">P=3</span></span>
@@ -52,7 +52,7 @@ export function ScoringLegendStrip({ variant = 'full', className }: Props) {
         </span>
         {/* Affordance — small chevron makes it feel like a tappable surface
             without needing a separate (i) button. */}
-        <span aria-hidden className="text-[10px] text-[var(--text-muted)]/70 group-hover:text-[var(--rose-dark)] shrink-0">
+        <span aria-hidden className={`${compact ? 'text-[10px]' : 'text-sm'} text-[var(--text-muted)]/70 group-hover:text-[var(--rose-dark)] shrink-0`}>
           ›
         </span>
       </button>

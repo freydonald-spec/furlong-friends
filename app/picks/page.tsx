@@ -683,7 +683,7 @@ export default function PicksPage() {
                 </span>
               ))}
             </div>
-            <div className="text-[10px] text-[var(--text-muted)] truncate flex items-center gap-1.5 leading-none mt-0.5">
+            <div className="text-sm text-[var(--text-muted)] truncate flex items-center gap-1.5 leading-tight mt-0.5">
               <span className="truncate">{event.name}</span>
               <span className="opacity-60">·</span>
               <button
@@ -1313,7 +1313,7 @@ function RaceTile({
     >
       <div className="flex items-start justify-between gap-1 mb-1">
         <div className="flex items-center gap-1">
-          <span className="text-[11px] font-extrabold text-[var(--text-muted)]">Race {race.race_number}</span>
+          <span className="text-sm font-extrabold text-[var(--text-muted)]">Race {race.race_number}</span>
           {tokenChip}
         </div>
         {badge}
@@ -1324,7 +1324,7 @@ function RaceTile({
       {/* Post time always visible; the coarse countdown sits underneath it on
           upcoming/open races only — locked/finished tiles drop the second row. */}
       {postTimeText && (
-        <div className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-tight">
+        <div className="text-sm text-[var(--text-muted)] mt-0.5 leading-tight">
           {postTimeText}
           {countdown && (
             <>
