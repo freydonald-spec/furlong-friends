@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
+import { WatermarkBG } from '@/components/WatermarkBG'
 
 type ReturningPlayer = {
   id: string
@@ -89,6 +90,7 @@ export default function SplashPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-between px-6 py-10 relative overflow-hidden bg-derby">
+      <WatermarkBG />
       {/* Decorative roses */}
       <div className="pointer-events-none select-none absolute inset-0 opacity-[0.06] flex flex-wrap content-start gap-10 text-7xl overflow-hidden">
         {Array.from({ length: 30 }).map((_, i) => (

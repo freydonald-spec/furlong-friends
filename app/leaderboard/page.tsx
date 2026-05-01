@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
+import { WatermarkBG } from '@/components/WatermarkBG'
 import { computePlayerBadges } from '@/lib/badges'
 import type { Event, Race, Horse, Pick, Player, Score } from '@/lib/types'
 
@@ -157,7 +158,7 @@ export default function LeaderboardPage() {
       <main className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="text-5xl mb-3 animate-pulse">📊</div>
-          <p className="text-white/70 text-lg">Loading leaderboard…</p>
+          <p className="text-[var(--text-muted)] text-lg">Loading leaderboard…</p>
         </div>
       </main>
     )
@@ -167,7 +168,7 @@ export default function LeaderboardPage() {
     return (
       <main className="min-h-screen flex items-center justify-center px-6 text-center">
         <div>
-          <p className="text-white/80 mb-4">{error}</p>
+          <p className="text-[var(--text-primary)] mb-4">{error}</p>
           <Link
             href="/"
             className="inline-block px-6 h-12 leading-[3rem] rounded-full bg-[var(--rose-dark)] border-2 border-[var(--gold)]/60 text-white font-bold"
@@ -181,18 +182,19 @@ export default function LeaderboardPage() {
 
   return (
     <main className="min-h-screen flex flex-col">
+      <WatermarkBG />
       {/* Header */}
-      <header className="px-4 py-3 flex items-center justify-between border-b border-white/10 backdrop-blur-sm bg-black/30 gap-3">
-        <Link href="/" className="text-white/60 hover:text-white text-sm shrink-0">← Home</Link>
+      <header className="px-4 py-3 flex items-center justify-between border-b border-[var(--border)] backdrop-blur-sm bg-white/95 gap-3 shadow-sm">
+        <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm shrink-0">← Home</Link>
         <div className="text-center min-w-0">
-          <h1 className="font-serif text-lg sm:text-xl font-bold text-white leading-tight truncate">
+          <h1 className="font-serif text-lg sm:text-xl font-bold text-[var(--text-primary)] leading-tight truncate">
             Leaderboard
           </h1>
-          <div className="text-[var(--gold)]/80 text-xs truncate">
+          <div className="text-[var(--rose-dark)] text-xs truncate font-medium">
             {event?.name ?? 'Live event'} • {standings.length} players
           </div>
         </div>
-        <Link href="/track" className="text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold shrink-0">
+        <Link href="/track" className="text-[var(--rose-dark)] hover:text-[var(--rose-dark)]/80 text-sm font-semibold shrink-0">
           🏁 Track
         </Link>
       </header>
@@ -201,19 +203,19 @@ export default function LeaderboardPage() {
       <section className="flex-1 px-4 py-4">
         <div className="max-w-2xl mx-auto">
           {standings.length === 0 ? (
-            <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-center text-white/60">
+            <div className="bg-white border border-[var(--border)] rounded-xl p-6 text-center text-[var(--text-muted)] shadow-sm">
               No players yet — share the join link!
             </div>
           ) : (
-            <div className="rounded-xl border border-white/15 bg-white/5 overflow-hidden">
+            <div className="rounded-xl border border-[var(--border)] bg-white overflow-hidden shadow-sm">
               {/* Header row */}
-              <div className="bg-black/40 text-white/70 text-[10px] uppercase tracking-wider px-3 py-2 grid grid-cols-[24px_1fr_56px_30px_30px_30px] gap-2 items-center">
+              <div className="bg-[var(--bg-primary)] text-[var(--text-muted)] text-[10px] uppercase tracking-wider px-3 py-2 grid grid-cols-[24px_1fr_56px_30px_30px_30px] gap-2 items-center font-bold">
                 <span>#</span>
                 <span>Player</span>
-                <span className="text-right text-[var(--gold)]">Score</span>
-                <span className="text-center text-emerald-400" title="Win picks correct">W</span>
-                <span className="text-center text-amber-300" title="Place picks correct">P</span>
-                <span className="text-center text-white/70" title="Show picks correct">S</span>
+                <span className="text-right text-[var(--rose-dark)]">Score</span>
+                <span className="text-center text-[var(--success)]" title="Win picks correct">W</span>
+                <span className="text-center text-[var(--gold)]" title="Place picks correct">P</span>
+                <span className="text-center" title="Show picks correct">S</span>
               </div>
               {/* Rows */}
               {standings.map((row, idx) => {
@@ -225,16 +227,16 @@ export default function LeaderboardPage() {
                       type="button"
                       onClick={() => setExpandedPlayerId(prev => prev === row.player.id ? null : row.player.id)}
                       aria-expanded={isExpanded}
-                      className={`w-full text-left px-3 py-2.5 grid grid-cols-[24px_1fr_56px_30px_30px_30px] gap-2 items-center border-t border-white/10 transition-colors hover:bg-white/[0.07] ${
-                        idx === 0 ? 'bg-[var(--gold)]/10' : ''
-                      } ${isExpanded ? 'bg-white/[0.08]' : ''}`}
+                      className={`w-full text-left px-3 py-2.5 grid grid-cols-[24px_1fr_56px_30px_30px_30px] gap-2 items-center border-t border-[var(--border)] transition-colors hover:bg-[var(--bg-card-hover)] ${
+                        idx === 0 ? 'bg-amber-50' : ''
+                      } ${isExpanded ? 'bg-[var(--bg-card-hover)]' : ''}`}
                     >
-                      <span className="text-white/70 font-bold text-sm">{idx + 1}</span>
+                      <span className="text-[var(--text-muted)] font-bold text-sm">{idx + 1}</span>
                       <div className="flex items-center gap-2 min-w-0">
                         <AvatarIcon id={row.player.avatar} className="w-9 h-9 rounded shrink-0" />
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-white font-semibold truncate">{row.player.name}</span>
+                            <span className="text-[var(--text-primary)] font-semibold truncate">{row.player.name}</span>
                             {medal && <span className="shrink-0 text-base">{medal}</span>}
                             {(badgesByPlayerId.get(row.player.id) ?? []).map(b => (
                               <span
@@ -247,17 +249,17 @@ export default function LeaderboardPage() {
                               </span>
                             ))}
                           </div>
-                          <span className="text-[10px] text-white/40 font-medium">
+                          <span className="text-[10px] text-[var(--text-muted)] font-medium">
                             {isExpanded ? '▴ hide details' : '▾ details'}
                           </span>
                         </div>
                       </div>
-                      <span className="text-[var(--gold)] font-bold text-lg text-right tabular-nums">
+                      <span className="text-[var(--rose-dark)] font-bold text-lg text-right tabular-nums">
                         {row.total}
                       </span>
-                      <span className="text-center text-emerald-400 font-mono text-sm">{row.wins}</span>
-                      <span className="text-center text-amber-300 font-mono text-sm">{row.places}</span>
-                      <span className="text-center text-white/70 font-mono text-sm">{row.shows}</span>
+                      <span className="text-center text-[var(--success)] font-mono text-sm">{row.wins}</span>
+                      <span className="text-center text-[var(--gold)] font-mono text-sm">{row.places}</span>
+                      <span className="text-center text-[var(--text-muted)] font-mono text-sm">{row.shows}</span>
                     </button>
                     <AnimatePresence initial={false}>
                       {isExpanded && (
@@ -266,10 +268,10 @@ export default function LeaderboardPage() {
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
                           transition={{ duration: 0.22, ease: 'easeOut' }}
-                          className="overflow-hidden bg-black/30 border-t border-white/10"
+                          className="overflow-hidden bg-[var(--bg-primary)] border-t border-[var(--border)]"
                         >
                           <div className="px-4 py-3">
-                            <div className="text-[10px] uppercase tracking-wider text-white/55 font-bold mb-2">
+                            <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-bold mb-2">
                               Race-by-race
                             </div>
                             <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
@@ -294,19 +296,19 @@ export default function LeaderboardPage() {
                                     title={titleParts.join(' · ')}
                                     className={`relative flex flex-col items-center justify-center rounded-lg py-1.5 text-center border ${
                                       positive
-                                        ? 'bg-[var(--gold)]/15 border-[var(--gold)]/50'
+                                        ? 'bg-amber-50 border-[var(--gold)]/50'
                                         : zero
-                                          ? 'bg-white/5 border-white/15'
-                                          : 'bg-white/[0.03] border-white/10'
+                                          ? 'bg-white border-[var(--border)]'
+                                          : 'bg-white/40 border-[var(--border)]'
                                     }`}
                                   >
-                                    <span className="text-[10px] text-white/55 font-bold">R{r.race_number}</span>
+                                    <span className="text-[10px] text-[var(--text-muted)] font-bold">R{r.race_number}</span>
                                     <span className={`text-sm font-bold tabular-nums ${
                                       positive
                                         ? 'text-[var(--gold)]'
                                         : zero
-                                          ? 'text-white/60'
-                                          : 'text-white/35'
+                                          ? 'text-[var(--text-primary)]'
+                                          : 'text-[var(--text-muted)]/60'
                                     }`}>{display}</span>
                                     {bonus > 0 && (
                                       <span className="absolute -top-1 -right-1 text-[8px]" aria-label="bonus">✨</span>
@@ -315,9 +317,9 @@ export default function LeaderboardPage() {
                                 )
                               })}
                             </div>
-                            <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between">
-                              <span className="text-[11px] text-white/55 uppercase tracking-wider font-bold">Total</span>
-                              <span className="text-[var(--gold)] font-bold text-lg tabular-nums">{row.total}</span>
+                            <div className="mt-3 pt-2 border-t border-[var(--border)] flex items-center justify-between">
+                              <span className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider font-bold">Total</span>
+                              <span className="text-[var(--rose-dark)] font-bold text-lg tabular-nums">{row.total}</span>
                             </div>
                           </div>
                         </motion.div>
@@ -337,19 +339,30 @@ export default function LeaderboardPage() {
       </div>
 
       {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[var(--dark)]/95 border-t border-white/10 backdrop-blur-sm z-10">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 border-t-2 border-[var(--rose-dark)]/30 backdrop-blur-sm z-10 shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
         <div className="max-w-2xl mx-auto flex">
-          <Link href="/" className="flex-1 py-3 text-center text-white/60 hover:text-white text-sm">
-            🏠 Home
-          </Link>
-          <Link href="/track" className="flex-1 py-3 text-center text-white/60 hover:text-white text-sm">
-            🏁 Live Track
-          </Link>
-          <Link href="/leaderboard" className="flex-1 py-3 text-center text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold">
-            📊 Leaderboard
-          </Link>
+          <NavTab href="/" label="Home" icon="🏠" active={false} />
+          <NavTab href="/track" label="Live Track" icon="🏁" active={false} />
+          <NavTab href="/leaderboard" label="Leaderboard" icon="📊" active={true} />
         </div>
       </nav>
     </main>
+  )
+}
+
+function NavTab({ href, label, icon, active }: { href: string; label: string; icon: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={`flex-1 py-3.5 text-center text-sm font-semibold transition-colors ${
+        active ? 'text-[var(--rose-dark)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+      }`}
+    >
+      <div className="flex flex-col items-center gap-0.5 leading-none">
+        {active && <span className="block w-1 h-1 rounded-full bg-[var(--rose-dark)] mb-0.5" />}
+        <span className="text-lg">{icon}</span>
+        <span className="text-[10px] uppercase tracking-wide">{label}</span>
+      </div>
+    </Link>
   )
 }

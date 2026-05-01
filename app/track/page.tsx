@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { getAvatar, AvatarIcon } from '@/lib/avatars'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
+import { WatermarkBG } from '@/components/WatermarkBG'
 import type { Event, Race, Player, Score } from '@/lib/types'
 
 // ─── Track geometry (SVG viewBox 0 0 800 280) ─────────────────────────────
@@ -412,6 +413,7 @@ export default function TrackPage() {
 
   return (
     <main className="min-h-screen flex flex-col bg-derby">
+      <WatermarkBG />
       {/* Top header */}
       <header className="px-4 py-3 flex items-center justify-between border-b border-white/10 backdrop-blur-sm bg-black/30 gap-3">
         <Link href="/" className="text-white/60 hover:text-white text-sm shrink-0">← Home</Link>

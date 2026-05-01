@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0b0203",
+  themeColor: "#F8F9FA",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -38,9 +38,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Body inherits the light theme from globals.css (background: var(--bg-primary)).
+  // Pages that want a dark splash background (/, /track) apply `bg-derby` on
+  // their own <main> instead.
   return (
     <html lang="en" className={`${geistSans.variable} ${playfair.variable} ${pressStart.variable}`}>
-      <body className="min-h-screen bg-derby text-white">{children}</body>
+      <body className="min-h-screen">{children}</body>
     </html>
   );
 }

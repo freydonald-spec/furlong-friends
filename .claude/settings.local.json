@@ -22,7 +22,8 @@
       "Bash(npx ts-node *)",
       "Bash(echo \"EXITCODE=$?\")",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

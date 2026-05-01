@@ -1,10 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --rose-dark: #8B1A2F;
-  --gold: #C9A84C;
-  --cream: #F5EDD6;
-  --dark: #0b0203;
+  /* Brand */
+  --rose-dark: #C41E3A;        /* crimson primary accent */
+  --gold: #E8A020;             /* warm gold */
+  --cream: #1A1A2E;            /* legacy alias — now dark text on light bg */
+  --success: #16A34A;          /* picked / scored */
+  --warning: #DC2626;          /* urgent locks */
+
+  /* Surfaces — light theme */
+  --bg-primary: #F8F9FA;       /* clean light gray page bg */
+  --bg-card: #FFFFFF;          /* white card surface */
+  --bg-card-hover: #F0F4FF;    /* subtle blue tint on hover */
+  --dark: var(--bg-primary);   /* legacy alias for existing usage */
+
+  /* Text */
+  --text-primary: #1A1A2E;     /* dark navy text */
+  --text-muted: #6B7280;       /* gray muted text */
+  --border: #E5E7EB;           /* light gray borders */
+
+  /* Track motif */
   --track-green: #1B4332;
   --track-dirt: #8b5a3c;
 }
@@ -14,6 +29,14 @@
   --color-gold: var(--gold);
   --color-cream: var(--cream);
   --color-dark: var(--dark);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-card: var(--bg-card);
+  --color-bg-card-hover: var(--bg-card-hover);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+  --color-border: var(--border);
   --color-track-green: var(--track-green);
   --color-track-dirt: var(--track-dirt);
   --font-serif: var(--font-playfair);
@@ -21,26 +44,33 @@
 }
 
 html, body {
-  background: var(--dark);
-  color: #FFFFFF;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   min-height: 100vh;
   font-size: 16px;
 }
 
 body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  /* Creates a stacking context so the fixed WatermarkBG (z-index: -1) sits
+     between the body background and content rather than disappearing
+     behind html. */
+  isolation: isolate;
 }
 
 /* Hide scrollbars on track screen */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* Subtle textured background */
+/* Branded splash background — used by /, /track. Stays dark navy regardless
+   of the light-theme variables so the splash + race-track screens keep their
+   dramatic dark feel and white text remains legible. */
 .bg-derby {
-  background-color: var(--dark);
+  background-color: #0F1629;
+  color: #FFFFFF;
   background-image:
-    radial-gradient(circle at 20% 10%, rgba(139, 26, 47, 0.18) 0%, transparent 40%),
-    radial-gradient(circle at 80% 80%, rgba(201, 168, 76, 0.10) 0%, transparent 50%);
+    radial-gradient(circle at 20% 10%, rgba(196, 30, 58, 0.25) 0%, transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(232, 160, 32, 0.12) 0%, transparent 50%);
 }
 
 /* Admin input — used in the admin console */

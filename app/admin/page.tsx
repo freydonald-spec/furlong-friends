@@ -164,6 +164,22 @@ export default function AdminPage() {
         async () => { const { data } = await supabase.from('picks').select('*').eq('event_id', event.id); if (data) setPicks(data) })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'races', filter: `event_id=eq.${event.id}` },
         async () => { const { data } = await supabase.from('races').select('*').eq('event_id', event.id).order('race_number'); if (data) setRaces(data) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'horses' },
+        async () => {
+          // Reload horses for this event's races. No filter on horses table by
+          // event_id so we re-fetch and regroup; volume is small.
+          const raceIds = (await supabase.from('races').select('id').eq('event_id', event.id)).data?.map(r => r.id) ?? []
+          if (raceIds.length === 0) return
+          const { data } = await supabase.from('horses').select('*').in('race_id', raceIds)
+          if (data) {
+            const grouped: Record<string, Horse[]> = {}
+            for (const h of data) {
+              if (!grouped[h.race_id]) grouped[h.race_id] = []
+              grouped[h.race_id].push(h)
+            }
+            setHorsesByRace(grouped)
+          }
+        })
       .subscribe()
     return () => { void supabase.removeChannel(channel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -212,7 +228,7 @@ export default function AdminPage() {
 
   if (!authed) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-6">
+      <main className="min-h-screen flex items-center justify-center px-6 bg-[#0A0D16] text-white">
         <div className="w-full max-w-sm">
           <Link href="/" className="text-white/60 hover:text-white text-sm mb-6 inline-block">← Home</Link>
           <div className="text-center mb-6">
@@ -241,7 +257,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col">
+    <main className="min-h-screen flex flex-col bg-[#0A0D16] text-white">
       <header className="px-4 py-3 border-b border-white/10 bg-black/40 sticky top-0 z-20">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3 flex-wrap">
           <Link href="/" className="text-white/60 hover:text-white text-sm">← Home</Link>
@@ -1189,8 +1205,10 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
   }
 
   async function toggleScratch(h: Horse) {
+    // Optimistic: skip the parent refresh() because the admin's horses-table
+    // realtime subscription will push the update back. Avoids the perceived
+    // "navigation" jolt the full event reload was causing.
     await supabase.from('horses').update({ scratched: !h.scratched }).eq('id', h.id)
-    onChange()
   }
 
   const playersWithPick = picks.filter(p => p.win_horse_id || p.place_horse_id || p.show_horse_id).length
@@ -1342,13 +1360,26 @@ function RaceAdminCard({ race, allRaces, horses, players, picks, now, onChange }
                       {h.number}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className={`text-white font-semibold text-sm truncate ${h.scratched ? 'line-through' : ''}`}>{h.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-white font-semibold text-sm truncate ${h.scratched ? 'line-through' : ''}`}>{h.name}</span>
+                        {h.scratched && (
+                          <span className="shrink-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded leading-none">SCR</span>
+                        )}
+                      </div>
                       {h.morning_line_odds && <div className="text-white/50 text-xs">{h.morning_line_odds}</div>}
                     </div>
-                    <button onClick={() => toggleScratch(h)} className="text-xs px-2 h-8 rounded border border-white/20 text-white/70">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); void toggleScratch(h) }}
+                      className="text-xs px-2 h-8 rounded border border-white/20 text-white/70 hover:border-white/40"
+                    >
                       {h.scratched ? 'Unscratch' : 'Scratch'}
                     </button>
-                    <button onClick={() => removeHorse(h.id)} className="text-xs px-2 h-8 rounded border border-red-500/30 text-red-300">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); void removeHorse(h.id) }}
+                      className="text-xs px-2 h-8 rounded border border-red-500/30 text-red-300 hover:border-red-500/60"
+                    >
                       ✕
                     </button>
                   </div>

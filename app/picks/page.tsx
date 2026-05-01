@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { AvatarIcon, useAvatarSampler } from '@/lib/avatars'
 import { parseLocalIso } from '@/lib/time'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
+import { WatermarkBG } from '@/components/WatermarkBG'
 import { computeBonus } from '@/lib/scoring'
 import { computePlayerBadges, type Badge } from '@/lib/badges'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
@@ -669,9 +670,9 @@ export default function PicksPage() {
       })
   }, [races, player, picks, now, dismissedAlerts])
 
-  // Aggregate "races without picks" summary for the persistent warning banner
-  // that sits below the player hero. Surfaces a count for casual urgency, and
-  // upgrades to a red per-race countdown if any unpicked race is < 30 min out.
+  // Critical-only warning banner: surfaces a single red banner when any
+  // unpicked upcoming race is within 10 minutes of locking. Below that
+  // threshold we stay quiet — the per-tile countdown handles the rest.
   const unpickedSummary = useMemo(() => {
     if (!races.length) return null
     const unpicked = races.filter(r => {
@@ -688,8 +689,9 @@ export default function PicksPage() {
       return { race: r, secondsUntil }
     }).sort((a, b) => a.secondsUntil - b.secondsUntil)
     const soonest = withSeconds[0]
-    const critical = soonest.secondsUntil <= 30 * 60 && soonest.secondsUntil > 0
-    return { count: unpicked.length, soonest, critical, races: unpicked }
+    const critical = soonest.secondsUntil <= 10 * 60 && soonest.secondsUntil > 0
+    if (!critical) return null
+    return { count: unpicked.length, soonest, races: unpicked }
   }, [races, picks, now])
 
   if (loading) {
@@ -720,14 +722,16 @@ export default function PicksPage() {
 
   return (
     <main className="min-h-screen pb-24">
+      <WatermarkBG />
+
       {/* Top-of-screen rank/score toasts (auto-dismiss in 3s) */}
-      <div className="fixed top-4 left-0 right-0 z-40 pointer-events-none flex flex-col items-center gap-2 px-4">
+      <div className="fixed top-14 left-0 right-0 z-40 pointer-events-none flex flex-col items-center gap-2 px-4">
         <AnimatePresence>
           {rankToasts.map(t => {
             const tone = t.tone === 'gold'
-              ? 'bg-[var(--gold)] text-[var(--dark)] border-[var(--gold)]'
+              ? 'bg-[var(--gold)] text-[var(--bg-primary)] border-[var(--gold)]'
               : t.tone === 'green'
-                ? 'bg-emerald-600/95 text-white border-emerald-300'
+                ? 'bg-[var(--success)] text-white border-emerald-300'
                 : 'bg-rose-900/90 text-rose-100 border-rose-400/60'
             return (
               <motion.div
@@ -745,51 +749,106 @@ export default function PicksPage() {
         </AnimatePresence>
       </div>
 
-      {/* Alert banners */}
+      {/* Slim sticky profile header — light theme */}
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-[var(--border)] px-3 py-2 shadow-sm">
+        <div className="max-w-2xl mx-auto flex items-center gap-3 h-9">
+          <button
+            type="button"
+            onClick={() => setChangeAvatarOpen(true)}
+            title="Tap to change avatar"
+            aria-label="Tap to change avatar"
+            className="shrink-0"
+          >
+            <AvatarIcon id={player.avatar} className="w-9 h-9 rounded-md" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[var(--text-primary)] font-semibold text-sm truncate">{player.name}</span>
+              {myBadges.slice(0, 2).map(b => (
+                <span
+                  key={b.label}
+                  title={b.label}
+                  className={`shrink-0 inline-flex items-center px-1.5 h-4 rounded-full text-[10px] font-bold border ${b.cls}`}
+                >
+                  <span aria-hidden>{b.emoji}</span>
+                </span>
+              ))}
+            </div>
+            <div className="text-[10px] text-[var(--text-muted)] truncate flex items-center gap-1.5 leading-none mt-0.5">
+              <span className="truncate">{event.name}</span>
+              <span className="opacity-60">·</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    localStorage.removeItem('furlong_player_id')
+                    localStorage.removeItem('furlong_player_name')
+                  }
+                  router.push('/')
+                }}
+                className="text-[var(--text-muted)] hover:text-[var(--rose-dark)] shrink-0"
+              >
+                Not you?
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="px-2 h-7 rounded-full bg-[var(--rose-dark)]/10 border border-[var(--rose-dark)]/30 text-[var(--rose-dark)] text-xs font-bold tabular-nums inline-flex items-center">
+              <motion.span
+                key={`pts-${myTotalScore}`}
+                initial={{ filter: 'brightness(1.4)' }}
+                animate={{ filter: 'brightness(1)' }}
+                transition={{ duration: 0.6 }}
+                className="inline-block"
+              >
+                {myTotalScore}
+              </motion.span>
+            </span>
+            <span className="px-2 h-7 rounded-full bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-primary)] text-xs font-bold tabular-nums inline-flex items-center">
+              <motion.span
+                key={`rank-${myRank}`}
+                initial={{ filter: 'brightness(1.4)' }}
+                animate={{ filter: 'brightness(1)' }}
+                transition={{ duration: 0.6 }}
+                className="inline-block"
+              >
+                #{myRank}
+              </motion.span>
+            </span>
+            <button
+              type="button"
+              onClick={startTour}
+              title="How to Play"
+              aria-label="How to play"
+              className="w-7 h-7 rounded-full bg-[var(--rose-dark)]/10 border border-[var(--rose-dark)]/40 text-[var(--rose-dark)] hover:bg-[var(--rose-dark)]/20 flex items-center justify-center text-xs font-bold shrink-0"
+            >
+              ?
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Transient alert banners — sit below the slim header */}
       <AnimatePresence>
         {adminAlert && (
           <motion.div
-            initial={{ y: -100, opacity: 0 }}
+            initial={{ y: -60, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -100, opacity: 0 }}
-            className="sticky top-0 z-30 bg-amber-500/95 text-amber-950 px-4 py-3 flex items-center justify-between shadow-lg"
+            exit={{ y: -60, opacity: 0 }}
+            className="sticky top-[52px] z-30 bg-amber-500/95 text-amber-950 px-4 py-3 flex items-center justify-between shadow-lg"
           >
             <span className="font-semibold text-sm">⚠️ {adminAlert}</span>
             <button onClick={() => setAdminAlert(null)} className="text-amber-950/80 ml-3 px-2 font-bold">✕</button>
           </motion.div>
         )}
-        {lockingSoon.map(race => {
-          const target = parseLocalIso(race.post_time)
-          const secsLeft = target ? Math.max(0, Math.round((target.getTime() - now) / 1000)) : 0
-          const m = Math.floor(secsLeft / 60)
-          const s = secsLeft % 60
-          const urgent = secsLeft < 60
-          return (
-            <motion.div
-              key={race.id}
-              initial={{ y: -100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -100, opacity: 0 }}
-              className={`sticky top-0 z-20 px-4 py-3 flex items-center justify-between shadow-lg ${urgent ? 'bg-red-600/95 text-white animate-pulse' : 'bg-amber-400/95 text-amber-950'}`}
-            >
-              <span className="font-semibold text-sm">
-                ⚠️ Race {race.race_number} locks in {m}:{String(s).padStart(2, '0')} — make your picks!
-              </span>
-              <button
-                onClick={() => setDismissedAlerts(prev => new Set([...prev, race.id]))}
-                className={`ml-3 px-2 font-bold ${urgent ? 'text-white/85' : 'text-amber-950/70'}`}
-              >✕</button>
-            </motion.div>
-          )
-        })}
         {lockedToasts.map(t => (
           <motion.div
             key={`lock-${t.id}`}
-            initial={{ y: -100, opacity: 0 }}
+            initial={{ y: -60, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -100, opacity: 0 }}
+            exit={{ y: -60, opacity: 0 }}
             transition={{ type: 'spring', damping: 24, stiffness: 260 }}
-            className="sticky top-0 z-30 bg-[var(--rose-dark)]/95 text-white px-4 py-3 shadow-lg border-b-2 border-[var(--gold)]/40"
+            className="sticky top-[52px] z-30 bg-[var(--rose-dark)] text-white px-4 py-3 shadow-lg border-b-2 border-[var(--gold)]"
           >
             <span className="font-semibold text-sm">
               🔒 Race {t.raceNumber} just locked! No more changes.
@@ -798,155 +857,51 @@ export default function PicksPage() {
         ))}
       </AnimatePresence>
 
-      {/* Player Hero */}
-      <section className="px-5 pt-6 pb-4">
-        <div className="max-w-2xl mx-auto bg-gradient-to-br from-[var(--rose-dark)] to-[#5a0f1d] rounded-2xl p-5 border-2 border-[var(--gold)]/40 shadow-lg relative overflow-hidden">
-          <div className="absolute -top-8 -right-8 text-9xl opacity-10">🌹</div>
-          <button
-            type="button"
-            onClick={startTour}
-            title="How to Play"
-            aria-label="How to play"
-            className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-[var(--gold)]/15 border border-[var(--gold)]/60 text-[var(--gold)] hover:bg-[var(--gold)]/25 text-xs font-bold"
-          >
-            <span aria-hidden>?</span>
-            <span className="hidden sm:inline">How to Play</span>
-          </button>
-          <div className="flex items-start gap-4 relative">
-            <button
-              type="button"
-              onClick={() => setChangeAvatarOpen(true)}
-              title="Change avatar"
-              className="relative shrink-0 group"
-            >
-              <AvatarIcon id={player.avatar} className="w-20 h-20 rounded-xl shadow-md" />
-              <span className="absolute -bottom-1 -right-1 bg-[var(--gold)] text-black text-[10px] font-bold rounded-full w-6 h-6 flex items-center justify-center border-2 border-[var(--rose-dark)] group-hover:scale-110 transition-transform">
-                ✎
-              </span>
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="font-serif text-2xl font-bold text-white truncate">{player.name}</h2>
-                {myBadges.map(b => (
-                  <span
-                    key={b.label}
-                    title={b.label}
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${b.cls}`}
-                  >
-                    <span aria-hidden>{b.emoji}</span>
-                    <span>{b.label}</span>
-                  </span>
-                ))}
-              </div>
-              <button
-                onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    localStorage.removeItem('furlong_player_id')
-                    localStorage.removeItem('furlong_player_name')
-                  }
-                  router.push('/')
-                }}
-                className="text-white/55 hover:text-white text-xs underline underline-offset-2 mt-0.5"
-              >
-                Not you?
-              </button>
-              <p className="text-[var(--gold)]/80 text-sm font-serif italic mt-1">{event.name}</p>
-              <div className="flex gap-4 mt-2">
-                <div>
-                  <div className="text-[var(--gold)] text-2xl font-bold leading-none">
-                    <motion.span
-                      key={`pts-${myTotalScore}`}
-                      initial={{ filter: 'brightness(2.4)', textShadow: '0 0 12px rgba(201,168,76,0.9)' }}
-                      animate={{ filter: 'brightness(1)', textShadow: '0 0 0 rgba(201,168,76,0)' }}
-                      transition={{ duration: 0.6 }}
-                      className="inline-block tabular-nums"
-                    >
-                      {myTotalScore}
-                    </motion.span>
-                  </div>
-                  <div className="text-white/60 text-xs uppercase tracking-wide">Points</div>
-                </div>
-                <div>
-                  <div className="text-[var(--gold)] text-2xl font-bold leading-none">
-                    <motion.span
-                      key={`rank-${myRank}`}
-                      initial={{ filter: 'brightness(2.4)', textShadow: '0 0 12px rgba(201,168,76,0.9)' }}
-                      animate={{ filter: 'brightness(1)', textShadow: '0 0 0 rgba(201,168,76,0)' }}
-                      transition={{ duration: 0.6 }}
-                      className="inline-block tabular-nums"
-                    >
-                      #{myRank}
-                    </motion.span>
-                    <span className="text-white/50 text-sm font-normal"> / {totalPlayers}</span>
-                  </div>
-                  <div className="text-white/60 text-xs uppercase tracking-wide">Rank</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => setChangeAvatarOpen(true)}
-            className="mt-3 text-xs font-semibold text-[var(--gold)] hover:text-white border border-[var(--gold)]/40 rounded-full px-3 h-8 inline-flex items-center"
-          >
-            🎨 Change Avatar
-          </button>
-        </div>
-      </section>
-
-      {/* Persistent unpicked-races warning banner — sticks below the player hero */}
+      {/* Critical unpicked-race banner — only shown when ≤10 min from lock */}
       {unpickedSummary && (() => {
-        const { count, soonest, critical } = unpickedSummary
+        const { soonest } = unpickedSummary
         const minutesLeft = Math.max(0, Math.floor(soonest.secondsUntil / 60))
-        const message = critical
-          ? `🔴 Race ${soonest.race.race_number} locks in ${minutesLeft} min — pick now!`
-          : `⚠️ You have ${count} race${count === 1 ? '' : 's'} without picks — locks soon!`
+        const message = `🔴 Race ${soonest.race.race_number} locks in ${minutesLeft} min — pick now!`
         return (
           <div
-            className={`sticky top-0 z-[15] mx-5 mb-3 max-w-2xl md:mx-auto rounded-xl border-2 shadow-lg backdrop-blur-sm cursor-pointer transition-colors ${
-              critical
-                ? 'bg-red-600/95 border-red-300 text-white animate-pulse'
-                : 'bg-amber-400/95 border-amber-300 text-amber-950 hover:bg-amber-400'
-            }`}
-            onClick={() => scrollToRace(soonest.race.id)}
+            className="sticky top-[52px] z-[15] mx-3 mt-2 mb-2 max-w-2xl md:mx-auto rounded-xl border-2 shadow-lg backdrop-blur-sm cursor-pointer bg-[var(--warning)] border-red-300 text-white animate-pulse"
+            onClick={() => setInfoModalRaceId(soonest.race.id)}
             role="button"
             tabIndex={0}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') scrollToRace(soonest.race.id) }}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setInfoModalRaceId(soonest.race.id) }}
           >
-            <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <div className="px-4 py-2.5 flex items-center justify-between gap-3">
               <span className="font-bold text-sm">{message}</span>
-              <span className="text-xs font-semibold opacity-80 shrink-0">Tap →</span>
+              <span className="text-xs font-semibold opacity-90 shrink-0">Tap →</span>
             </div>
           </div>
         )
       })()}
 
-      {/* Multiplier Tokens */}
+      {/* Slim Power Plays row — read-only status display. Assignment happens
+          inside the Race Info popup, so these pills don't need to be tappable. */}
       {event.multiplier_visible && (
-        <section className="px-5 pb-4" data-tour-bonus-tokens="true">
-          <div className="max-w-2xl mx-auto">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[var(--gold)] text-sm uppercase tracking-wider font-bold flex items-center gap-2">
-                <span aria-hidden>✨</span> Your Bonus Tokens
-              </h3>
-              <span className="text-white/45 text-[10px] uppercase tracking-wide">multiply your points</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <TokenCard
-                type="3x"
-                assignedRaceId={player.multiplier_3x_race_id}
-                races={races}
-                onAssign={() => setTokenAssignType('3x')}
-              />
-              <TokenCard
-                type="2x"
-                assignedRaceId={player.multiplier_2x_race_id}
-                races={races}
-                onAssign={() => setTokenAssignType('2x')}
-              />
-            </div>
-            <p className="text-white/45 text-[11px] mt-3 text-center italic">
-              Tokens auto-assign to your most valuable races · tap a card to change
-            </p>
+        <section className="px-3 pt-3 pb-2" data-tour-bonus-tokens="true">
+          <div className="max-w-2xl mx-auto flex items-center gap-2 flex-wrap">
+            <span className="text-[var(--gold)] font-bold text-[11px] uppercase tracking-wider shrink-0">⚡ Power Plays:</span>
+            {(['3x', '2x'] as const).map(t => {
+              const assignedId = t === '3x' ? player.multiplier_3x_race_id : player.multiplier_2x_race_id
+              const r = races.find(x => x.id === assignedId)
+              const mult = t === '3x' ? '×3' : '×2'
+              return (
+                <span
+                  key={t}
+                  className={`px-3 h-8 rounded-full border text-xs font-bold inline-flex items-center ${
+                    r
+                      ? 'bg-[var(--gold)]/15 border-[var(--gold)]/60 text-[var(--gold)]'
+                      : 'bg-white border-[var(--border)] text-[var(--text-muted)]'
+                  }`}
+                >
+                  {r ? `R${r.race_number} ${mult}` : `${mult} unassigned`}
+                </span>
+              )
+            })}
+            <span className="text-[10px] text-[var(--text-muted)] italic ml-1">tap a race to assign</span>
           </div>
         </section>
       )}
@@ -954,45 +909,32 @@ export default function PicksPage() {
       {/* Race Cards */}
       <section className="px-5">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-end justify-between mb-2 gap-3 flex-wrap">
-            <h3 className="text-white/80 text-sm uppercase tracking-wider font-semibold">
+          <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+            <h3 className="text-[var(--text-muted)] text-sm uppercase tracking-wider font-semibold">
               Races
             </h3>
-            <div className="flex items-center gap-3">
-              {races.some(r => r.status === 'upcoming' || r.status === 'open') && (
-                <button
-                  onClick={() => setWizardOpen(true)}
-                  className="px-3 h-8 rounded-full bg-[var(--gold)] text-[var(--dark)] text-xs font-bold shadow-md hover:bg-[var(--gold)]/90 active:scale-[0.97] transition-all inline-flex items-center gap-1"
-                >
-                  🏇 Pick All Races
-                </button>
-              )}
-              {races.length > 1 && (() => {
-                const allExpanded = races.every(r => expandedRaces.has(r.id))
-                return (
-                  <button
-                    onClick={() => setExpandedRaces(allExpanded ? new Set() : new Set(races.map(r => r.id)))}
-                    className="text-white/65 hover:text-white text-xs font-semibold underline-offset-2 hover:underline"
-                  >
-                    {allExpanded ? 'Collapse All' : 'Expand All'}
-                  </button>
-                )
-              })()}
-            </div>
+            {races.some(r => r.status === 'upcoming' || r.status === 'open') && (
+              <button
+                onClick={() => setWizardOpen(true)}
+                className="px-3 h-8 rounded-full bg-[var(--rose-dark)] text-white text-xs font-bold shadow-md hover:bg-[var(--rose-dark)]/90 active:scale-[0.97] transition-all inline-flex items-center gap-1"
+              >
+                🏇 Pick All Races
+              </button>
+            )}
           </div>
           {races.length === 0 ? (
-            <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-center text-white/60">
+            <div className="bg-white border border-[var(--border)] rounded-xl p-6 text-center text-[var(--text-muted)] shadow-sm">
               No races posted yet. The host will set them up before post time.
             </div>
           ) : (
             <>
-              {/* Race progress indicator */}
+              {/* Day progress bar */}
               {(() => {
                 const finishedCount = races.filter(r => r.status === 'finished').length
                 return (
                   <div className="mb-3 px-1">
-                    <div className="flex items-center justify-between text-[11px] text-white/65 mb-1.5">
-                      <span className="uppercase tracking-wider font-bold text-white/55">Day Progress</span>
+                    <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] mb-1.5">
+                      <span className="uppercase tracking-wider font-bold">Day Progress</span>
                       <span className="font-semibold tabular-nums">
                         Race {finishedCount} of {races.length} complete
                       </span>
@@ -1007,7 +949,7 @@ export default function PicksPage() {
                               ? 'bg-[var(--gold)]'
                               : r.status === 'locked'
                                 ? 'bg-[var(--rose-dark)]'
-                                : 'bg-white/10'
+                                : 'bg-[var(--border)]'
                           }`}
                         />
                       ))}
@@ -1016,38 +958,34 @@ export default function PicksPage() {
                 )
               })()}
 
-              {/* Race tab strip — sticky horizontal nav with fade indicators + desktop arrows */}
+              {/* Race tab strip — sticky horizontal nav, light theme */}
               <div
                 ref={tabStripRef}
-                className="sticky top-0 z-10 -mx-2 mb-3 bg-[var(--dark)]/95 backdrop-blur-sm border-b border-white/10 rounded-b-lg"
+                className="sticky top-[52px] z-10 -mx-2 mb-3 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-b border-[var(--border)] rounded-b-lg"
               >
                 <div className="relative">
-                  {/* Left fade */}
                   <div
-                    className={`pointer-events-none absolute left-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-r from-[var(--dark)] via-[var(--dark)]/80 to-transparent transition-opacity duration-200 ${showLeftFade ? 'opacity-100' : 'opacity-0'}`}
+                    className={`pointer-events-none absolute left-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-r from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-transparent transition-opacity duration-200 ${showLeftFade ? 'opacity-100' : 'opacity-0'}`}
                   />
-                  {/* Right fade */}
                   <div
-                    className={`pointer-events-none absolute right-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-l from-[var(--dark)] via-[var(--dark)]/80 to-transparent transition-opacity duration-200 ${showRightFade ? 'opacity-100' : 'opacity-0'}`}
+                    className={`pointer-events-none absolute right-0 top-0 bottom-0 w-12 z-10 bg-gradient-to-l from-[var(--bg-primary)] via-[var(--bg-primary)]/80 to-transparent transition-opacity duration-200 ${showRightFade ? 'opacity-100' : 'opacity-0'}`}
                   />
-                  {/* Left arrow */}
                   {showLeftFade && (
                     <button
                       type="button"
                       onClick={() => scrollStripBy('left')}
                       aria-label="Scroll tabs left"
-                      className="flex absolute left-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--dark)] shadow-lg text-lg font-bold leading-none hover:bg-[var(--gold)] transition-colors"
+                      className="flex absolute left-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--text-primary)] border border-[var(--border)] shadow-md text-lg font-bold leading-none hover:bg-[var(--rose-dark)] hover:text-white hover:border-[var(--rose-dark)] transition-colors"
                     >
                       ‹
                     </button>
                   )}
-                  {/* Right arrow */}
                   {showRightFade && (
                     <button
                       type="button"
                       onClick={() => scrollStripBy('right')}
                       aria-label="Scroll tabs right"
-                      className="flex absolute right-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--dark)] shadow-lg text-lg font-bold leading-none hover:bg-[var(--gold)] transition-colors"
+                      className="flex absolute right-2 top-1/2 -translate-y-1/2 z-20 w-8 h-8 items-center justify-center rounded-full bg-white text-[var(--text-primary)] border border-[var(--border)] shadow-md text-lg font-bold leading-none hover:bg-[var(--rose-dark)] hover:text-white hover:border-[var(--rose-dark)] transition-colors"
                     >
                       ›
                     </button>
@@ -1063,12 +1001,12 @@ export default function PicksPage() {
                       const locked = r.status === 'locked'
                       const icon = finished ? '✅' : locked ? '🔒' : null
                       const stateClass = active
-                        ? 'bg-[var(--gold)] text-[var(--dark)] font-bold shadow-md ring-2 ring-[var(--gold)]/40'
+                        ? 'bg-[var(--rose-dark)] text-white font-bold shadow-md'
                         : locked
-                          ? 'bg-[var(--rose-dark)]/30 text-rose-100 border border-[var(--rose-dark)]/70 opacity-90'
+                          ? 'bg-gray-100 text-gray-500 border border-gray-300'
                           : finished
-                            ? 'bg-emerald-900/30 text-emerald-200/80 border border-emerald-700/40 opacity-70'
-                            : 'bg-white/5 text-[var(--cream)] border border-white/10 hover:bg-white/10 hover:text-white'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-white text-[var(--text-primary)] border border-[var(--border)] hover:bg-[var(--bg-card-hover)]'
                       return (
                         <button
                           key={r.id}
@@ -1076,8 +1014,8 @@ export default function PicksPage() {
                             if (el) tabRefs.current.set(r.id, el)
                             else tabRefs.current.delete(r.id)
                           }}
-                          onClick={() => scrollToRace(r.id)}
-                          className={`flex-shrink-0 px-4 py-2 rounded-full text-base font-semibold whitespace-nowrap transition-colors ${stateClass}`}
+                          onClick={() => setInfoModalRaceId(r.id)}
+                          className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${stateClass}`}
                         >
                           {icon ? <span className="mr-1">{icon}</span> : null}R{r.race_number}
                         </button>
@@ -1087,43 +1025,53 @@ export default function PicksPage() {
                 </div>
               </div>
 
-              <div className="space-y-3">
-                {races.map((race, idx) => (
-                <div
-                  key={race.id}
-                  data-race-id={race.id}
-                  data-tour-first={idx === 0 ? 'true' : undefined}
-                  data-tour-featured={race.is_featured ? 'true' : undefined}
-                  ref={el => {
-                    if (el) raceCardRefs.current.set(race.id, el)
-                    else raceCardRefs.current.delete(race.id)
-                  }}
-                >
-                  <RaceCard
-                    race={race}
-                    horses={horsesByRace[race.id] ?? []}
-                    pick={picks.find(p => p.race_id === race.id) ?? null}
-                    score={allScores.find(s => s.race_id === race.id && s.player_id === player.id) ?? null}
-                    scoreRevealed={effectiveRevealed.has(race.id)}
-                    multiplier={
-                      player.multiplier_3x_race_id === race.id ? '3x' :
-                      player.multiplier_2x_race_id === race.id ? '2x' : null
-                    }
-                    multiplierVisible={event.multiplier_visible}
-                    now={now}
-                    expanded={expandedRaces.has(race.id)}
-                    onToggle={() => setExpandedRaces(prev => {
-                      const next = new Set(prev)
-                      if (next.has(race.id)) next.delete(race.id)
-                      else next.add(race.id)
-                      return next
-                    })}
-                    onOpenRaceInfo={() => setInfoModalRaceId(race.id)}
-                    racePicks={allEventPicks.filter(p => p.race_id === race.id)}
-                    totalPlayers={allPlayers.length}
-                  />
-                </div>
-              ))}
+              {/* Compact race tile grid — replaces the old vertical card list */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {(() => {
+                  // Sort: critical unpicked → other unpicked → picked → locked → finished
+                  function rankFor(r: Race): number {
+                    const hasPick = picks.some(p =>
+                      p.race_id === r.id && (p.win_horse_id || p.place_horse_id || p.show_horse_id)
+                    )
+                    if (r.status === 'finished') return 5
+                    if (r.status === 'locked') return 4
+                    if (hasPick) return 3
+                    const target = parseLocalIso(r.post_time)
+                    const secondsUntil = target ? (target.getTime() - now) / 1000 : Infinity
+                    if (secondsUntil > 0 && secondsUntil < 30 * 60) return 1
+                    return 2
+                  }
+                  return [...races].sort((a, b) => {
+                    const ra = rankFor(a), rb = rankFor(b)
+                    if (ra !== rb) return ra - rb
+                    return a.race_number - b.race_number
+                  }).map((race, idx) => (
+                    <div
+                      key={race.id}
+                      data-race-id={race.id}
+                      data-tour-first={idx === 0 ? 'true' : undefined}
+                      data-tour-featured={race.is_featured ? 'true' : undefined}
+                      ref={el => {
+                        if (el) raceCardRefs.current.set(race.id, el)
+                        else raceCardRefs.current.delete(race.id)
+                      }}
+                    >
+                      <RaceTile
+                        race={race}
+                        horses={horsesByRace[race.id] ?? []}
+                        pick={picks.find(p => p.race_id === race.id) ?? null}
+                        score={allScores.find(s => s.race_id === race.id && s.player_id === player.id) ?? null}
+                        scoreRevealed={effectiveRevealed.has(race.id)}
+                        multiplier={
+                          player.multiplier_3x_race_id === race.id ? '3x' :
+                          player.multiplier_2x_race_id === race.id ? '2x' : null
+                        }
+                        now={now}
+                        onOpen={() => setInfoModalRaceId(race.id)}
+                      />
+                    </div>
+                  ))
+                })()}
               </div>
             </>
           )}
@@ -1141,6 +1089,10 @@ export default function PicksPage() {
             eventId={event.id}
             onSaved={() => setPicksSavedToast(true)}
             onClose={() => setInfoModalRaceId(null)}
+            races={races}
+            multiplier3xRaceId={player.multiplier_3x_race_id}
+            multiplier2xRaceId={player.multiplier_2x_race_id}
+            multiplierVisible={event.multiplier_visible}
           />
         )}
       </AnimatePresence>
@@ -1253,17 +1205,11 @@ export default function PicksPage() {
       </AnimatePresence>
 
       {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[var(--dark)]/95 border-t border-white/10 backdrop-blur-sm z-10">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 border-t-2 border-[var(--rose-dark)]/30 backdrop-blur-sm z-10 shadow-[0_-2px_8px_rgba(0,0,0,0.05)]">
         <div className="max-w-2xl mx-auto flex">
-          <Link href="/" className="flex-1 py-3 text-center text-white/60 hover:text-white text-sm">
-            🏠 Home
-          </Link>
-          <Link href="/track" data-tour-live-track="true" className="flex-1 py-3 text-center text-[var(--gold)] hover:text-[var(--gold)]/80 text-sm font-semibold">
-            🏁 Live Track
-          </Link>
-          <Link href="/leaderboard" className="flex-1 py-3 text-center text-white/60 hover:text-white text-sm">
-            📊 Leaderboard
-          </Link>
+          <PicksNavTab href="/" label="Home" icon="🏠" active={false} />
+          <PicksNavTab href="/track" label="Live Track" icon="🏁" active={false} dataTourLiveTrack />
+          <PicksNavTab href="/leaderboard" label="Leaderboard" icon="📊" active={false} />
         </div>
       </nav>
 
@@ -1284,6 +1230,185 @@ export default function PicksPage() {
         )}
       </AnimatePresence>
     </main>
+  )
+}
+
+// ----- BOTTOM NAV TAB -----
+function PicksNavTab({
+  href, label, icon, active, dataTourLiveTrack,
+}: {
+  href: string
+  label: string
+  icon: string
+  active: boolean
+  dataTourLiveTrack?: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      data-tour-live-track={dataTourLiveTrack ? 'true' : undefined}
+      className={`flex-1 py-3.5 text-center text-sm font-semibold transition-colors ${
+        active ? 'text-[var(--rose-dark)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+      }`}
+    >
+      <div className="flex flex-col items-center gap-0.5 leading-none">
+        {active && <span className="block w-1 h-1 rounded-full bg-[var(--rose-dark)] mb-0.5" />}
+        <span className="text-lg">{icon}</span>
+        <span className="text-[10px] uppercase tracking-wide">{label}</span>
+      </div>
+    </Link>
+  )
+}
+
+// ----- RACE TILE — compact grid card -----
+function RaceTile({
+  race, horses, pick, score, scoreRevealed, multiplier, now, onOpen,
+}: {
+  race: Race
+  horses: Horse[]
+  pick: Pick | null
+  score: Score | null
+  scoreRevealed: boolean
+  multiplier: '2x' | '3x' | null
+  now: number
+  onOpen: () => void
+}) {
+  const hasPicks = !!(pick && (pick.win_horse_id || pick.place_horse_id || pick.show_horse_id))
+  const finished = race.status === 'finished' && scoreRevealed
+  const locked = race.status === 'locked'
+  const upcoming = race.status === 'upcoming' || race.status === 'open'
+  const winHorse = horses.find(h => h.finish_position === 1)
+  const placeHorse = horses.find(h => h.finish_position === 2)
+  const showHorse = horses.find(h => h.finish_position === 3)
+
+  // Live countdown — only meaningful for upcoming/open races.
+  const countdown = (() => {
+    if (!upcoming) return null
+    const target = parseLocalIso(race.post_time)
+    if (!target) return null
+    const secs = Math.floor((target.getTime() - now) / 1000)
+    if (secs <= 0) return { text: 'POST TIME', urgent: true }
+    const h = Math.floor(secs / 3600)
+    const m = Math.floor((secs % 3600) / 60)
+    const s = secs % 60
+    const text = h > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`
+    return { text, urgent: secs < 60 * 60 }
+  })()
+
+  const postTime = parseLocalIso(race.post_time)
+  const postTimeText = postTime
+    ? postTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null
+
+  // Tile state styling: bg, left-border, footer content.
+  let bgClass = 'bg-white'
+  let borderL = 'border-l-[var(--border)]'
+  let badge: React.ReactNode = null
+  let footer: React.ReactNode = null
+
+  if (race.is_featured) {
+    bgClass = 'bg-amber-50'
+    borderL = 'border-l-[var(--gold)]'
+    badge = (
+      <span className="text-[10px] font-extrabold text-[var(--gold)] bg-white border border-[var(--gold)]/50 px-1.5 py-0.5 rounded">
+        ⭐ {race.featured_multiplier}X
+      </span>
+    )
+  }
+
+  if (finished && score) {
+    borderL = score.final_points > 0 ? 'border-l-[var(--success)]' : 'border-l-gray-300'
+    if (!race.is_featured) bgClass = 'bg-white'
+    badge = (
+      <span className="text-sm font-extrabold text-[var(--gold)] bg-amber-50 border border-[var(--gold)]/50 px-2 py-0.5 rounded-full leading-none tabular-nums">
+        +{score.final_points}
+      </span>
+    )
+    footer = (
+      <div className="text-[11px] text-[var(--text-muted)] leading-tight">
+        🥇 #{winHorse?.number ?? '?'} · 🥈 #{placeHorse?.number ?? '?'} · 🥉 #{showHorse?.number ?? '?'}
+      </div>
+    )
+  } else if (race.status === 'finished' && !score) {
+    borderL = 'border-l-gray-300'
+    bgClass = race.is_featured ? bgClass : 'bg-gray-50'
+    footer = <div className="text-[11px] text-[var(--text-muted)] italic">No pick</div>
+  } else if (locked) {
+    borderL = 'border-l-gray-400'
+    bgClass = race.is_featured ? bgClass : 'bg-gray-50'
+    footer = (
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[11px] font-bold text-gray-600 inline-flex items-center gap-1">
+          🔒 Locked
+        </span>
+        {hasPicks && pick && (
+          <span className="text-[11px] text-[var(--text-muted)] font-mono tabular-nums">
+            {[pick.win_horse_id, pick.place_horse_id, pick.show_horse_id]
+              .map(id => horses.find(h => h.id === id)?.number ?? '—').join('·')}
+          </span>
+        )}
+      </div>
+    )
+  } else if (hasPicks && upcoming) {
+    if (!race.is_featured) bgClass = 'bg-emerald-50'
+    borderL = 'border-l-[var(--success)]'
+    footer = (
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[11px] font-bold text-[var(--success)] inline-flex items-center gap-1">
+          ✓ Picked
+        </span>
+        {pick && (
+          <span className="text-[11px] text-[var(--text-muted)] font-mono tabular-nums">
+            {[pick.win_horse_id, pick.place_horse_id, pick.show_horse_id]
+              .map(id => horses.find(h => h.id === id)?.number ?? '—').join('·')}
+          </span>
+        )}
+      </div>
+    )
+  } else if (upcoming) {
+    if (!race.is_featured) bgClass = 'bg-white'
+    borderL = 'border-l-[var(--rose-dark)]'
+    footer = (
+      <span className="text-[11px] font-bold text-[var(--rose-dark)] inline-flex items-center gap-1">
+        🏇 Tap to pick
+      </span>
+    )
+  }
+
+  // Token overlay — small chip if 2x/3x assigned to this race
+  const tokenChip = multiplier ? (
+    <span className="text-[9px] font-extrabold text-[var(--gold)] bg-white border border-[var(--gold)]/50 px-1 py-0.5 rounded leading-none">
+      {multiplier === '3x' ? '×3' : '×2'}
+    </span>
+  ) : null
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`relative text-left w-full min-h-[120px] p-3 rounded-xl border border-[var(--border)] border-l-[3px] ${borderL} ${bgClass} shadow-sm hover:shadow-md hover:bg-[var(--bg-card-hover)] active:scale-[0.99] transition-all`}
+    >
+      <div className="flex items-start justify-between gap-1 mb-1">
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] font-extrabold text-[var(--text-muted)]">R{race.race_number}</span>
+          {tokenChip}
+        </div>
+        {badge}
+      </div>
+      <div className="font-semibold text-[var(--text-primary)] text-sm truncate" title={race.name}>
+        {race.name || `Race ${race.race_number}`}
+      </div>
+      <div className="text-[11px] text-[var(--text-muted)] mt-0.5 flex items-center gap-2">
+        {countdown ? (
+          <span className={`font-mono tabular-nums font-bold ${countdown.urgent ? 'text-[var(--warning)]' : 'text-[var(--gold)]'}`}>
+            {countdown.text}
+          </span>
+        ) : postTimeText ? (
+          <span>{postTimeText}</span>
+        ) : null}
+      </div>
+      <div className="mt-2">{footer}</div>
+    </button>
   )
 }
 
@@ -1754,6 +1879,7 @@ function oddsToValue(odds: string | null | undefined): number {
 
 function RaceInfoModal({
   race, horses, existingPick, playerId, eventId, onSaved, onClose,
+  races, multiplier3xRaceId, multiplier2xRaceId, multiplierVisible,
 }: {
   race: Race
   horses: Horse[]
@@ -1762,6 +1888,11 @@ function RaceInfoModal({
   eventId: string
   onSaved?: () => void
   onClose: () => void
+  /** Full race list — needed to label tokens that are assigned to a different race. */
+  races: Race[]
+  multiplier3xRaceId: string | null
+  multiplier2xRaceId: string | null
+  multiplierVisible: boolean
 }) {
   const postTimeLocal = parseLocalIso(race.post_time)
   // Sort by post position (number) so the program reads in gate order. Scratched
@@ -1842,8 +1973,8 @@ function RaceInfoModal({
         aria-label={`Pick #${horseId} for ${slot}`}
         className={`shrink-0 h-8 w-10 rounded-md text-[11px] font-bold uppercase tracking-wide transition-colors ${
           active
-            ? 'bg-[var(--gold)] text-[var(--dark)] shadow-md'
-            : 'bg-white/5 text-white/65 border border-white/15 hover:bg-white/10 hover:text-white'
+            ? 'bg-[var(--rose-dark)] text-white shadow-md'
+            : 'bg-white text-[var(--text-muted)] border border-[var(--border)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         {label}
@@ -1856,7 +1987,7 @@ function RaceInfoModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center"
+      className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center"
       onClick={onClose}
     >
       <motion.div
@@ -1865,22 +1996,22 @@ function RaceInfoModal({
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 26, stiffness: 200 }}
         onClick={e => e.stopPropagation()}
-        className="bg-[var(--dark)] border-t-2 sm:border-2 border-[var(--gold)]/40 sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md sm:max-h-[90vh] max-h-[92vh] overflow-hidden flex flex-col"
+        className="bg-white border-t-2 sm:border-2 border-[var(--border)] sm:rounded-2xl rounded-t-3xl w-full sm:max-w-md sm:max-h-[90vh] max-h-[92vh] overflow-hidden flex flex-col shadow-xl"
       >
         {/* Header */}
-        <div className="px-5 pt-4 pb-3 border-b border-white/10">
+        <div className="px-5 pt-4 pb-3 border-b border-[var(--border)] bg-white">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[var(--gold)]/80 text-xs uppercase font-bold tracking-wider">
+              <div className="text-[var(--rose-dark)] text-xs uppercase font-bold tracking-wider">
                 Race {race.race_number}
                 {race.is_featured && (
                   <span className="ml-2 text-[var(--gold)]">⭐ {race.featured_multiplier}X POINTS</span>
                 )}
               </div>
-              <h3 className="font-serif text-xl font-bold text-white mt-0.5 leading-tight">
+              <h3 className="font-serif text-xl font-bold text-[var(--text-primary)] mt-0.5 leading-tight">
                 {race.name || `Race ${race.race_number}`}
               </h3>
-              <div className="text-white/50 text-xs mt-1 flex items-center gap-2 flex-wrap">
+              <div className="text-[var(--text-muted)] text-xs mt-1 flex items-center gap-2 flex-wrap">
                 {race.distance && <span>{race.distance}</span>}
                 {postTimeLocal && (
                   <span>
@@ -1893,30 +2024,30 @@ function RaceInfoModal({
             <button
               onClick={onClose}
               aria-label="Close"
-              className="shrink-0 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none flex items-center justify-center transition-colors"
+              className="shrink-0 w-9 h-9 rounded-full bg-[var(--bg-primary)] hover:bg-[var(--bg-card-hover)] text-[var(--text-primary)] text-xl leading-none flex items-center justify-center transition-colors border border-[var(--border)]"
             >
               ✕
             </button>
           </div>
           {canPick && (
-            <p className="mt-2 text-[11px] text-white/45">
-              Tap <span className="text-[var(--gold)]/80 font-semibold">1st / 2nd / 3rd</span> to set Win, Place, Show — picks save instantly.
+            <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+              Tap <span className="text-[var(--rose-dark)] font-semibold">1st / 2nd / 3rd</span> to set Win, Place, Show — picks save instantly.
             </p>
           )}
         </div>
 
         {/* Horse list */}
-        <div className="flex-1 overflow-y-auto px-2 py-2">
+        <div className="flex-1 overflow-y-auto px-2 py-2 bg-white">
           {sorted.length === 0 ? (
-            <div className="text-white/50 text-sm italic px-4 py-6 text-center">
+            <div className="text-[var(--text-muted)] text-sm italic px-4 py-6 text-center">
               No horses listed yet.
             </div>
           ) : (
-            <ul className="divide-y divide-white/5">
+            <ul className="divide-y divide-[var(--border)]">
               {sorted.map((h, i) => {
-                const stripe = i % 2 === 1 ? 'bg-white/[0.03]' : ''
+                const stripe = i % 2 === 1 ? 'bg-[var(--bg-primary)]' : ''
                 const isFavorite = !h.scratched && h.id === favoriteId
-                const rowBg = isFavorite ? 'bg-[var(--gold)]/[0.08]' : stripe
+                const rowBg = isFavorite ? 'bg-amber-50' : stripe
                 return (
                   <li
                     key={h.id}
@@ -1924,20 +2055,20 @@ function RaceInfoModal({
                   >
                     <span className={`inline-flex items-center justify-center w-9 h-9 rounded-full font-bold text-sm tabular-nums shrink-0 ${
                       h.scratched
-                        ? 'bg-white/5 text-white/30 border border-white/10'
+                        ? 'bg-gray-100 text-gray-400 border border-gray-300'
                         : isFavorite
-                          ? 'bg-[var(--gold)]/30 text-[var(--gold)] border-2 border-[var(--gold)]/70'
+                          ? 'bg-[var(--gold)]/30 text-[var(--gold)] border-2 border-[var(--gold)]'
                           : 'bg-[var(--gold)]/10 text-[var(--gold)] border-2 border-[var(--gold)]/40'
                     }`}>
                       {h.number}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className={`text-sm font-medium flex items-center gap-1.5 ${
-                        h.scratched ? 'text-white/40 line-through' : 'text-white'
+                        h.scratched ? 'text-gray-400 line-through' : 'text-[var(--text-primary)]'
                       }`}>
                         <span className="truncate">{h.name}</span>
                         {h.scratched && (
-                          <span className="shrink-0 bg-red-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded leading-none no-underline">
+                          <span className="shrink-0 bg-[var(--warning)] text-white text-[9px] font-bold px-1.5 py-0.5 rounded leading-none no-underline">
                             SCR
                           </span>
                         )}
@@ -1949,7 +2080,7 @@ function RaceInfoModal({
                       </div>
                     </div>
                     <span className={`w-12 text-right text-sm font-mono tabular-nums shrink-0 ${
-                      h.scratched ? 'text-white/30 line-through' : 'text-white/70'
+                      h.scratched ? 'text-gray-400 line-through' : 'text-[var(--text-muted)]'
                     }`}>
                       {h.morning_line_odds || '—'}
                     </span>
@@ -1966,8 +2097,78 @@ function RaceInfoModal({
             </ul>
           )}
         </div>
+
+        {/* Power Play assignment — only when picks are still allowed for this race */}
+        {canPick && multiplierVisible && (
+          <div className="px-5 py-3 border-t border-[var(--border)] bg-[var(--bg-primary)]">
+            <div className="text-[var(--gold)] font-bold text-[11px] uppercase tracking-wider mb-2">
+              ⚡ Power Play
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(['3x', '2x'] as const).map(t => (
+                <PowerPlayButton
+                  key={t}
+                  type={t}
+                  thisRaceId={race.id}
+                  assignedRaceId={t === '3x' ? multiplier3xRaceId : multiplier2xRaceId}
+                  races={races}
+                  playerId={playerId}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </motion.div>
     </motion.div>
+  )
+}
+
+function PowerPlayButton({
+  type, thisRaceId, assignedRaceId, races, playerId,
+}: {
+  type: '3x' | '2x'
+  thisRaceId: string
+  assignedRaceId: string | null
+  races: Race[]
+  playerId: string
+}) {
+  const [busy, setBusy] = useState(false)
+  const label = type === '3x' ? '×3' : '×2'
+  const field = type === '3x' ? 'multiplier_3x_race_id' : 'multiplier_2x_race_id'
+  const onThisRace = assignedRaceId === thisRaceId
+  const otherRace = assignedRaceId && !onThisRace
+    ? races.find(r => r.id === assignedRaceId)
+    : null
+
+  async function applyOrToggle() {
+    setBusy(true)
+    try {
+      const next = onThisRace ? null : thisRaceId
+      await supabase.from('players').update({ [field]: next }).eq('id', playerId)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  let cls = 'bg-white border-[var(--gold)]/60 text-[var(--gold)] hover:bg-[var(--gold)]/10'
+  let text = `Apply ${label} to this race`
+  if (onThisRace) {
+    cls = 'bg-[var(--gold)] border-[var(--gold)] text-white shadow-md hover:bg-[var(--gold)]/90'
+    text = `✓ ${label} Applied — tap to remove`
+  } else if (otherRace) {
+    cls = 'bg-white border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--gold)]/60 hover:text-[var(--text-primary)]'
+    text = `${label} on R${otherRace.race_number} — move here?`
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={applyOrToggle}
+      disabled={busy}
+      className={`px-3 h-9 rounded-full border-2 text-xs font-bold transition-colors ${cls} ${busy ? 'opacity-60 cursor-wait' : ''}`}
+    >
+      {text}
+    </button>
   )
 }
 
