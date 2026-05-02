@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "@/lib/supabase"
 import { AVATARS, AvatarIcon, useAvatarSampler } from "@/lib/avatars"
 import { InstallAppCard } from "@/components/InstallAppCard"
+import { joinPartyMessage } from "@/components/PartyChat"
 import type { Event, Player } from "@/lib/types"
 
 type TakenInfo = { avatar: string; name: string; id: string }
@@ -218,6 +219,15 @@ export default function JoinPage() {
 
       if (insertErr) throw insertErr
       if (!player) throw new Error('No player returned')
+
+      // Drop a system message into party chat announcing the new arrival.
+      // Fire-and-forget — a chat hiccup shouldn't block the player from
+      // entering the game.
+      void supabase.from('messages').insert({
+        event_id: event.id,
+        player_id: player.id,
+        content: joinPartyMessage(player.name),
+      })
 
       restoreSession(player)
     } catch (e) {

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { getAvatar, AvatarIcon } from '@/lib/avatars'
 import { WatchPartyBadge } from '@/lib/watch-party-badge'
 import { WatermarkBG } from '@/components/WatermarkBG'
+import { PartyChat } from '@/components/PartyChat'
 import type { Event, Race, Player, Score, Pick, Horse } from '@/lib/types'
 
 // ─── Track geometry (SVG viewBox 0 0 800 280) ─────────────────────────────
@@ -156,6 +157,20 @@ export default function TrackPage() {
   const [playerDetailLoading, setPlayerDetailLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Chat needs to know who's chatting. The track page is otherwise viewer-
+  // agnostic, so read the player id from localStorage post-mount and resolve
+  // it against the loaded players list to get the full Player record. PartyChat
+  // self-hides when this is null (e.g. an unauthenticated screen-share).
+  const [currentPlayerId, setCurrentPlayerId] = useState<string | null>(null)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCurrentPlayerId(localStorage.getItem('furlong_player_id'))
+  }, [])
+  const currentPlayer = useMemo(
+    () => (currentPlayerId ? players.find(p => p.id === currentPlayerId) ?? null : null),
+    [currentPlayerId, players],
+  )
 
   async function loadAll() {
     try {
@@ -808,6 +823,18 @@ export default function TrackPage() {
           )
         })()}
       </AnimatePresence>
+
+      {/* Floating party-chat bubble — dark variant to match the splash bg.
+          Hidden when the viewer hasn't joined (no localStorage player id) so
+          spectators don't get a chat input that can't post anywhere. */}
+      {event && currentPlayer && (
+        <PartyChat
+          eventId={event.id}
+          player={currentPlayer}
+          players={players}
+          theme="dark"
+        />
+      )}
     </main>
   )
 }

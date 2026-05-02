@@ -14,6 +14,7 @@ import { usePeerConfidence, type RaceConfidence } from '@/lib/usePeerConfidence'
 import { PeerConfidenceBar } from '@/components/PeerConfidenceBar'
 import { PickWizard } from '@/components/PickWizard'
 import { ScoringLegendStrip } from '@/components/ScoringLegendStrip'
+import { PartyChat } from '@/components/PartyChat'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 export default function PicksPage() {
@@ -1064,6 +1065,9 @@ export default function PicksPage() {
           <PicksNavTab href="/leaderboard" label="Leaderboard" icon="📊" active={false} />
         </div>
       </nav>
+
+      {/* Floating party-chat bubble — sits above the bottom nav. */}
+      <PartyChat eventId={event.id} player={player} players={allPlayers} theme="light" />
 
       {/* First-run tutorial tour */}
       <AnimatePresence>

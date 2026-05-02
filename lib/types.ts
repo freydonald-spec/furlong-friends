@@ -80,3 +80,18 @@ export type Score = {
   place_correct: boolean
   show_correct: boolean
 }
+
+export type Message = {
+  id: string
+  event_id: string
+  player_id: string
+  content: string
+  created_at: string
+  /** Denormalized author info — present on rows fetched via a join, absent on
+   *  raw realtime payloads. PartyChat resolves it from a local players cache
+   *  when the join data isn't there. */
+  player?: {
+    name: string
+    avatar: string
+  }
+}
