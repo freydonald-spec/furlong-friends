@@ -1049,8 +1049,22 @@ export default function PicksPage() {
             player={player}
             onAssign={async (raceId) => {
               const field = tokenAssignType === '3x' ? 'multiplier_3x_race_id' : 'multiplier_2x_race_id'
-              await supabase.from('players').update({ [field]: raceId }).eq('id', player.id)
-              setPlayer({ ...player, [field]: raceId })
+              const otherField = tokenAssignType === '3x' ? 'multiplier_2x_race_id' : 'multiplier_3x_race_id'
+              const otherCurrent = tokenAssignType === '3x'
+                ? player.multiplier_2x_race_id
+                : player.multiplier_3x_race_id
+              // Defensive: even though TokenAssignModal disables the OTHER
+              // slot's race row in its UI, also enforce the no-duplicate
+              // invariant at the write site so any future code path can't
+              // sneak past it.
+              const updates: Record<string, string | null> = { [field]: raceId }
+              const nextPlayer: Player = { ...player, [field]: raceId }
+              if (raceId !== null && otherCurrent === raceId) {
+                updates[otherField] = null
+                nextPlayer[otherField as 'multiplier_3x_race_id' | 'multiplier_2x_race_id'] = null
+              }
+              await supabase.from('players').update(updates).eq('id', player.id)
+              setPlayer(nextPlayer)
               setTokenAssignType(null)
             }}
             onClose={() => setTokenAssignType(null)}
@@ -1677,6 +1691,7 @@ function RaceInfoModal({
                   type={t}
                   thisRaceId={race.id}
                   assignedRaceId={t === '3x' ? multiplier3xRaceId : multiplier2xRaceId}
+                  otherSlotAssignedRaceId={t === '3x' ? multiplier2xRaceId : multiplier3xRaceId}
                   races={races}
                   playerId={playerId}
                 />
@@ -1690,17 +1705,23 @@ function RaceInfoModal({
 }
 
 function PowerPlayButton({
-  type, thisRaceId, assignedRaceId, races, playerId,
+  type, thisRaceId, assignedRaceId, otherSlotAssignedRaceId, races, playerId,
 }: {
   type: '3x' | '2x'
   thisRaceId: string
+  /** Race currently holding THIS slot (×3 or ×2). */
   assignedRaceId: string | null
+  /** Race currently holding the OTHER slot. Used to enforce the no-duplicate
+   *  invariant: if the player assigns this race to this slot and that race
+   *  already holds the other slot, the other slot is cleared in the same write. */
+  otherSlotAssignedRaceId: string | null
   races: Race[]
   playerId: string
 }) {
   const [busy, setBusy] = useState(false)
   const label = type === '3x' ? '×3' : '×2'
   const field = type === '3x' ? 'multiplier_3x_race_id' : 'multiplier_2x_race_id'
+  const otherField = type === '3x' ? 'multiplier_2x_race_id' : 'multiplier_3x_race_id'
   const onThisRace = assignedRaceId === thisRaceId
   const otherRace = assignedRaceId && !onThisRace
     ? races.find(r => r.id === assignedRaceId)
@@ -1710,7 +1731,15 @@ function PowerPlayButton({
     setBusy(true)
     try {
       const next = onThisRace ? null : thisRaceId
-      await supabase.from('players').update({ [field]: next }).eq('id', playerId)
+      // Enforce "a race can only fill one of ×3 / ×2" — if we're assigning
+      // this race to this slot AND it currently holds the OTHER slot, clear
+      // the other slot in the same write so we never leave the player with
+      // a duplicate.
+      const updates: Record<string, string | null> = { [field]: next }
+      if (next !== null && otherSlotAssignedRaceId === thisRaceId) {
+        updates[otherField] = null
+      }
+      await supabase.from('players').update(updates).eq('id', playerId)
     } finally {
       setBusy(false)
     }
@@ -1754,6 +1783,19 @@ function TokenAssignModal({
   // the player can't assign the same race to both ×3 and ×2 simultaneously.
   const otherSlotRaceId = type === '3x' ? player.multiplier_2x_race_id : player.multiplier_3x_race_id
   const otherSlotLabel = type === '3x' ? '×2' : '×3'
+  // TEMP debug: confirms the disabled-row math is wired correctly. Drop a
+  // breakpoint or watch the console — the row whose race id matches
+  // `otherSlotRaceId` should render as the greyed-out "already used for ×N".
+  // eslint-disable-next-line no-console
+  console.log('[TokenAssignModal]', {
+    type,
+    currentRaceId,
+    otherSlotRaceId,
+    otherSlotLabel,
+    multiplier_3x_race_id: player.multiplier_3x_race_id,
+    multiplier_2x_race_id: player.multiplier_2x_race_id,
+    eligibleRaceIds: eligibleRaces.map(r => ({ id: r.id, race_number: r.race_number })),
+  })
 
   return (
     <motion.div
