@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
@@ -72,7 +72,25 @@ export default function JoinPage() {
   const [error, setError] = useState<string | null>(null)
   const [rejoinCandidate, setRejoinCandidate] = useState<TakenInfo | null>(null)
   const [welcomeMatch, setWelcomeMatch] = useState<WelcomeInfo | null>(null)
-  const sampler = useAvatarSampler({ currentId: selectedAvatar })
+  // Avatars already in use by other players in this event — used to exclude
+  // them from the random sampler pool, so a brand-new player won't see a
+  // fresh "available" tile that's actually claimed.
+  const takenAvatarIds = useMemo(() => taken.map(t => t.avatar), [taken])
+  const sampler = useAvatarSampler({
+    currentId: selectedAvatar,
+    excludeIds: takenAvatarIds,
+  })
+
+  /** Re-pulls the current event's player list. Used on every shuffle so a
+   *  rapid-join from another phone is reflected before the player commits. */
+  async function refreshTaken() {
+    if (!event) return
+    const { data } = await supabase
+      .from('players')
+      .select('id, name, avatar')
+      .eq('event_id', event.id)
+    if (data) setTaken(data)
+  }
 
   async function init() {
     try {
@@ -389,6 +407,17 @@ export default function JoinPage() {
                     `}
                   >
                     <AvatarIcon id={avatar.id} className="w-full h-full p-0.5" />
+                    {/* Visible "TAKEN" pill on claimed avatars — only really
+                        seen in "See all" mode, since the random sample now
+                        excludes taken ids before they get rendered here. */}
+                    {t && (
+                      <span
+                        aria-hidden
+                        className="absolute bottom-0.5 left-1/2 -translate-x-1/2 px-1 py-px rounded text-[8px] font-extrabold uppercase tracking-wider bg-gray-700 text-white shadow-sm"
+                      >
+                        Taken
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -399,7 +428,13 @@ export default function JoinPage() {
                 <>
                   <button
                     type="button"
-                    onClick={sampler.shuffle}
+                    onClick={() => {
+                      // Re-pull the latest taken list before shuffling so
+                      // anyone who joined since this page loaded gets folded
+                      // out of the new sample.
+                      void refreshTaken()
+                      sampler.shuffle()
+                    }}
                     className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] font-medium"
                   >
                     🔀 Shuffle

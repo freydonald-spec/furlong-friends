@@ -1750,6 +1750,10 @@ function TokenAssignModal({
 }) {
   const eligibleRaces = races.filter(r => r.status === 'open' || r.status === 'upcoming')
   const currentRaceId = type === '3x' ? player.multiplier_3x_race_id : player.multiplier_2x_race_id
+  // The race already locked to the OTHER multiplier. Disabled in this list so
+  // the player can't assign the same race to both ×3 and ×2 simultaneously.
+  const otherSlotRaceId = type === '3x' ? player.multiplier_2x_race_id : player.multiplier_3x_race_id
+  const otherSlotLabel = type === '3x' ? '×2' : '×3'
 
   return (
     <motion.div
@@ -1773,18 +1777,31 @@ function TokenAssignModal({
             <p className="text-[var(--text-muted)] text-center py-6">No races available to assign to right now.</p>
           ) : eligibleRaces.map(race => {
             const isCurrent = currentRaceId === race.id
+            const isOtherSlot = race.id === otherSlotRaceId
+            const stateCls = isOtherSlot
+              ? 'border-[var(--border)] bg-gray-50 opacity-60 cursor-not-allowed'
+              : isCurrent
+                ? 'border-[var(--gold)] bg-amber-50'
+                : 'border-[var(--border)] bg-white hover:border-[var(--gold)]/60 hover:bg-[var(--bg-card-hover)]'
             return (
               <button
                 key={race.id}
-                onClick={() => onAssign(race.id)}
-                className={`w-full text-left p-3 rounded-xl border-2 transition-all min-h-[60px] flex justify-between items-center ${isCurrent ? 'border-[var(--gold)] bg-amber-50' : 'border-[var(--border)] bg-white hover:border-[var(--gold)]/60 hover:bg-[var(--bg-card-hover)]'}`}
+                onClick={() => { if (!isOtherSlot) onAssign(race.id) }}
+                disabled={isOtherSlot}
+                aria-disabled={isOtherSlot}
+                className={`w-full text-left p-3 rounded-xl border-2 transition-all min-h-[60px] flex justify-between items-center ${stateCls}`}
               >
                 <div>
                   <div className="text-[var(--text-muted)] text-xs">RACE {race.race_number}</div>
                   <div className="text-[var(--text-primary)] font-semibold">{race.name || `Race ${race.race_number}`}</div>
                   {race.is_featured && <div className="text-[var(--gold)] text-xs">⭐ {race.featured_multiplier}X POINTS</div>}
+                  {isOtherSlot && (
+                    <div className="text-[var(--text-muted)] text-[11px] italic mt-0.5">
+                      already used for {otherSlotLabel}
+                    </div>
+                  )}
                 </div>
-                {isCurrent && <span className="text-[var(--gold)] text-xl">✓</span>}
+                {isCurrent && !isOtherSlot && <span className="text-[var(--gold)] text-xl">✓</span>}
               </button>
             )
           })}

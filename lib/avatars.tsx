@@ -2203,8 +2203,11 @@ export function getAvatar(id: string | null | undefined): Avatar {
   return AVATARS.find(a => a.id === id) ?? FALLBACK_AVATAR
 }
 
-function sampleAvatars(count: number): Avatar[] {
-  const arr = [...AVATARS]
+function sampleAvatars(count: number, exclude?: Set<string>): Avatar[] {
+  const pool = exclude && exclude.size > 0
+    ? AVATARS.filter(a => !exclude.has(a.id))
+    : AVATARS
+  const arr = [...pool]
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[arr[i], arr[j]] = [arr[j], arr[i]]
@@ -2216,11 +2219,50 @@ function sampleAvatars(count: number): Avatar[] {
  * Hook for paged avatar pickers: shows `count` random avatars, with shuffle and
  * "see all" controls. The currently-selected avatar is forced into the visible
  * slice so users can always see what they have selected.
+ *
+ * `excludeIds` filters avatars out of the random sample (used by /join to
+ * keep already-claimed avatars from appearing in the selection pool). The
+ * "see all" expanded view still returns every avatar so the caller can mark
+ * taken ones with their own UI; in random-sample mode they're hidden outright.
  */
-export function useAvatarSampler(options: { currentId?: string | null; count?: number } = {}) {
-  const { currentId = null, count = 12 } = options
+export function useAvatarSampler(options: {
+  currentId?: string | null
+  count?: number
+  excludeIds?: string[]
+} = {}) {
+  const { currentId = null, count = 12, excludeIds } = options
+  // Stable key for the exclude set — change identity only when the actual
+  // contents differ, so the resample effect doesn't fire on every render.
+  const excludeKey = (excludeIds ?? []).slice().sort().join(',')
+  const excludeSet = React.useMemo(
+    () => new Set(excludeIds ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [excludeKey],
+  )
   const [expanded, setExpanded] = React.useState(false)
-  const [base, setBase] = React.useState<Avatar[]>(() => sampleAvatars(count))
+  const [base, setBase] = React.useState<Avatar[]>(() => sampleAvatars(count, excludeSet))
+
+  // Re-sample when the excluded set changes and the current sample contains
+  // anything that was just taken — replace stale picks with fresh ones from
+  // the still-available pool.
+  React.useEffect(() => {
+    // Functional setState here is the right shape: we need the previous
+    // sample to decide if anything is stale. Disable the lint rule because
+    // the set-state-in-effect pattern is intentional sync from external prop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBase(prev => {
+      const stale = prev.some(a => excludeSet.has(a.id))
+      if (!stale) return prev
+      const kept = prev.filter(a => !excludeSet.has(a.id))
+      const fresh = sampleAvatars(count, excludeSet)
+      const merged: Avatar[] = [...kept]
+      for (const a of fresh) {
+        if (merged.length >= count) break
+        if (!merged.some(b => b.id === a.id)) merged.push(a)
+      }
+      return merged.slice(0, count)
+    })
+  }, [excludeSet, count])
 
   const visible = React.useMemo(() => {
     if (expanded) return AVATARS
@@ -2235,8 +2277,10 @@ export function useAvatarSampler(options: { currentId?: string | null; count?: n
     expanded,
     expand: () => setExpanded(true),
     collapse: () => setExpanded(false),
-    shuffle: () => setBase(sampleAvatars(count)),
-    total: AVATARS.length,
+    shuffle: () => setBase(sampleAvatars(count, excludeSet)),
+    /** Pool size after excludes — drives the "See all N" label so the count
+     *  matches what the player can actually choose from. */
+    total: AVATARS.length - excludeSet.size,
   }
 }
 

@@ -103,6 +103,11 @@ function PickWizardInner({
   const [confirmClose, setConfirmClose] = useState(false)
   const [pendingHorseId, setPendingHorseId] = useState<string | null>(null)
   const [busyClose, setBusyClose] = useState(false)
+  // Which slot the next horse-tap will fill. Auto-advances to the next empty
+  // slot whenever picks change unless the player has manually targeted one
+  // by tapping a slot pill (the override resets when the race changes).
+  const [activeSlot, setActiveSlot] = useState<Slot>('win')
+  const slotOverrideRef = useRef(false)
   // Touch-swipe scratchpad — hoisted up here so it lives above the empty-state
   // early return below (rules-of-hooks: refs can't sit beneath conditional returns).
   const swipeStart = useRef<{ x: number; y: number; t: number } | null>(null)
@@ -116,6 +121,23 @@ function PickWizardInner({
   useEffect(() => { setMult3x(player.multiplier_3x_race_id) }, [player.multiplier_3x_race_id])
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMult2x(player.multiplier_2x_race_id) }, [player.multiplier_2x_race_id])
+
+  // Legacy data fix: if a player record was saved before the no-duplicate
+  // invariant existed and has the same race in both ×3 and ×2, clear ×2 so
+  // the wizard renders a coherent state. Runs once per session.
+  const legacyDupeClearedRef = useRef(false)
+  useEffect(() => {
+    if (legacyDupeClearedRef.current) return
+    if (mult3x && mult3x === mult2x) {
+      legacyDupeClearedRef.current = true
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMult2x(null)
+      void supabase
+        .from('players')
+        .update({ multiplier_2x_race_id: null })
+        .eq('id', player.id)
+    }
+  }, [mult3x, mult2x, player.id])
 
   // Auto-advance past the current race if it locks underneath us.
   useEffect(() => {
@@ -163,6 +185,33 @@ function PickWizardInner({
   // fewer than PEER_CONFIDENCE_THRESHOLD players have win-picked this race.
   const peerConfThisRace = race ? (peerByRace[race.id] ?? null) : null
 
+  // Reset slot override + active slot whenever the race changes. Lives above
+  // the empty-state early return so rules-of-hooks holds — when there's no
+  // race the deps just evaluate to undefined and the body is a no-op.
+  useEffect(() => {
+    slotOverrideRef.current = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveSlot('win')
+  }, [race?.id])
+
+  // Auto-advance active slot to the next empty one whenever picks change,
+  // unless the player has manually overridden via a pill tap.
+  useEffect(() => {
+    if (slotOverrideRef.current) return
+    const w = existingPick?.win_horse_id ?? null
+    const p = existingPick?.place_horse_id ?? null
+    const s = existingPick?.show_horse_id ?? null
+    let nextSlot: Slot = 'win'
+    if (!w) nextSlot = 'win'
+    else if (!p) nextSlot = 'place'
+    else if (!s) nextSlot = 'show'
+    else nextSlot = activeSlot
+    if (nextSlot !== activeSlot) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveSlot(nextSlot)
+    }
+  }, [existingPick, activeSlot])
+
   // Empty state — every race is already locked or finished.
   if (wizardRaces.length === 0 || !race) {
     return (
@@ -194,27 +243,46 @@ function PickWizardInner({
 
   // ----- TAP HANDLER -----
   // First tap → 1st (Win), second → 2nd (Place), third → 3rd (Show).
-  // Tapping any already-selected horse clears that slot. Once all three slots
-  // are full, further taps on new horses are ignored — the user has to clear
-  // a slot first.
+  // Tap behavior is now active-slot-driven so players can override the
+  // default WPS fill order:
+  //   - If the tapped horse already sits in `activeSlot`, clear that slot.
+  //   - If it's in a DIFFERENT slot, move it into `activeSlot` (the previous
+  //     slot is emptied; whatever was already in `activeSlot` is replaced).
+  //   - If it's not selected anywhere, drop it into `activeSlot`, replacing
+  //     whatever was there.
+  // After a successful fill the active slot auto-advances to the next empty
+  // slot via the effect below — but a manual override (slot-pill tap) sticks
+  // until the player switches races.
   async function handleTap(horseId: string) {
     if (pendingHorseId) return
-    if (!race) return // narrows for the supabase insert below
+    if (!race) return
     const cur: CurPicks = {
       win: existingPick?.win_horse_id ?? null,
       place: existingPick?.place_horse_id ?? null,
       show: existingPick?.show_horse_id ?? null,
     }
-    let next: CurPicks
-    if (cur.win === horseId) next = { ...cur, win: null }
-    else if (cur.place === horseId) next = { ...cur, place: null }
-    else if (cur.show === horseId) next = { ...cur, show: null }
-    else if (cur.win === null) next = { ...cur, win: horseId }
-    else if (cur.place === null) next = { ...cur, place: horseId }
-    else if (cur.show === null) next = { ...cur, show: horseId }
-    else return // all three slots full + new horse — ignore
+    const next: CurPicks = { ...cur }
+    const currentSlot = selectedSlotFor(horseId)
 
-    setPendingHorseId(horseId)
+    if (currentSlot === activeSlot) {
+      // Tapping the horse that's already in the active slot clears it.
+      next[activeSlot] = null
+    } else {
+      // Move (or assign) the horse to the active slot. Clear it from any
+      // other slot it might already be in so we don't double-book it.
+      if (currentSlot) next[currentSlot] = null
+      next[activeSlot] = horseId
+    }
+
+    await persistPicks(next, horseId)
+  }
+
+  /** Single supabase write for whichever pick row currently exists (insert
+   *  if first time, update otherwise). Extracted so the slot-clear and
+   *  Clear-All buttons can reuse the same write path. */
+  async function persistPicks(next: CurPicks, pendingId: string | null) {
+    if (!race) return
+    setPendingHorseId(pendingId)
     try {
       const payload = {
         win_horse_id: next.win,
@@ -245,6 +313,33 @@ function PickWizardInner({
     if (existingPick?.show_horse_id === horseId) return 'show'
     return null
   }
+
+  /** Clear a single slot — used by the ✕ on filled slot pills. */
+  async function clearSlot(slot: Slot) {
+    if (!existingPick) return
+    const next: CurPicks = {
+      win: existingPick.win_horse_id ?? null,
+      place: existingPick.place_horse_id ?? null,
+      show: existingPick.show_horse_id ?? null,
+    }
+    if (next[slot] === null) return
+    next[slot] = null
+    await persistPicks(next, null)
+  }
+
+  /** Wipe all three slots — used by the "Clear All" link below the pills. */
+  async function clearAllSlots() {
+    if (!existingPick) return
+    if (!existingPick.win_horse_id && !existingPick.place_horse_id && !existingPick.show_horse_id) return
+    await persistPicks({ win: null, place: null, show: null }, null)
+  }
+
+  /** Player-driven slot select — sticks for the rest of this race step. */
+  function handleSlotPillTap(slot: Slot) {
+    slotOverrideRef.current = true
+    setActiveSlot(slot)
+  }
+
 
   // ----- NAVIGATION -----
   const isLastRaceStep = stepIdx === wizardRaces.length - 1
@@ -320,6 +415,10 @@ function PickWizardInner({
           existingPick={existingPick}
           selectedSlotFor={selectedSlotFor}
           onTapHorse={handleTap}
+          activeSlot={activeSlot}
+          onSlotPillTap={handleSlotPillTap}
+          onClearSlot={clearSlot}
+          onClearAll={clearAllSlots}
           pendingHorseId={pendingHorseId}
           allPicked={allPicked}
           isFirstRaceStep={isFirstRaceStep}
@@ -365,9 +464,26 @@ function PickWizardInner({
           mult3x={mult3x}
           mult2x={mult2x}
           onAssign={async (slot, raceId) => {
-            const field = slot === '3x' ? 'multiplier_3x_race_id' : 'multiplier_2x_race_id'
-            if (slot === '3x') setMult3x(raceId); else setMult2x(raceId)
-            await supabase.from('players').update({ [field]: raceId }).eq('id', player.id)
+            // Enforce the invariant "a race can only fill one of ×3 / ×2".
+            // If the new assignment lands on whichever race is currently
+            // holding the OTHER slot, clear the other slot in the same write.
+            const updates: Record<string, string | null> = {}
+            if (slot === '3x') {
+              setMult3x(raceId)
+              updates.multiplier_3x_race_id = raceId
+              if (mult2x === raceId) {
+                setMult2x(null)
+                updates.multiplier_2x_race_id = null
+              }
+            } else {
+              setMult2x(raceId)
+              updates.multiplier_2x_race_id = raceId
+              if (mult3x === raceId) {
+                setMult3x(null)
+                updates.multiplier_3x_race_id = null
+              }
+            }
+            await supabase.from('players').update(updates).eq('id', player.id)
           }}
           onBack={() => setPhase('summary')}
           onAllDone={() => finalizeClose(true)}
@@ -425,7 +541,8 @@ function PickWizardInner({
 // ===== RACE STEP =====
 function RaceStep({
   race, stepIdx, totalSteps, direction, horses, favoriteId, peerConf,
-  existingPick, selectedSlotFor, onTapHorse, pendingHorseId, allPicked,
+  existingPick, selectedSlotFor, onTapHorse, activeSlot, onSlotPillTap,
+  onClearSlot, onClearAll, pendingHorseId, allPicked,
   isFirstRaceStep, isLastRaceStep, postTimeLocal, onPrev, onNext, onSkipRace,
   onTouchStart, onTouchEnd, onClose,
 }: {
@@ -440,6 +557,14 @@ function RaceStep({
   existingPick: Pick | null
   selectedSlotFor: (horseId: string) => Slot | null
   onTapHorse: (horseId: string) => void
+  /** Slot the next tap will fill — drives the pill highlight + tap behavior. */
+  activeSlot: Slot
+  /** Player tapped a slot pill (override). */
+  onSlotPillTap: (slot: Slot) => void
+  /** ✕ next to a filled pill → clear just that slot. */
+  onClearSlot: (slot: Slot) => Promise<void>
+  /** "Clear All" link below the pills → wipe win/place/show. */
+  onClearAll: () => Promise<void>
   pendingHorseId: string | null
   allPicked: boolean
   isFirstRaceStep: boolean
@@ -501,28 +626,67 @@ function RaceStep({
               </span>
             )}
           </div>
-          {/* Slot status pills */}
-          <div className="flex items-center gap-2 mt-3">
+          {/* Slot status pills — clickable to set the active slot. The whole
+              pill is the active-slot toggle; a small ✕ to its right clears
+              just that slot when filled. The active pill gets a thicker gold
+              border so players know "the next horse I tap will land here". */}
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
             {(['win', 'place', 'show'] as const).map(s => {
               const horseId = s === 'win' ? existingPick?.win_horse_id
                 : s === 'place' ? existingPick?.place_horse_id
                 : existingPick?.show_horse_id
               const filled = !!horseId
+              const isActive = activeSlot === s
+              const pillCls = isActive
+                ? filled
+                  ? 'bg-[var(--gold)]/25 text-[var(--gold)] border-[var(--gold)] ring-2 ring-[var(--gold)]/40'
+                  : 'bg-white text-[var(--rose-dark)] border-[var(--rose-dark)] ring-2 ring-[var(--rose-dark)]/30'
+                : filled
+                  ? 'bg-[var(--gold)]/15 text-[var(--gold)] border-[var(--gold)]/60 hover:bg-[var(--gold)]/20'
+                  : 'bg-white text-[var(--text-muted)] border-[var(--border)] hover:border-[var(--text-muted)]'
               return (
-                <span
-                  key={s}
-                  className={`inline-flex items-center gap-1 px-2.5 h-7 rounded-full text-[11px] font-bold border ${
-                    filled
-                      ? 'bg-[var(--gold)]/15 text-[var(--gold)] border-[var(--gold)]/60'
-                      : 'bg-white text-[var(--text-muted)] border-[var(--border)]'
-                  }`}
-                >
-                  <span aria-hidden>{slotEmoji(s)}</span>
-                  <span>{slotLabel(s)}</span>
-                  {filled && <span aria-hidden>✓</span>}
+                <span key={s} className="inline-flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => onSlotPillTap(s)}
+                    aria-pressed={isActive}
+                    className={`inline-flex items-center gap-1 pl-2.5 pr-2.5 h-7 rounded-full text-[11px] font-bold border-2 transition-colors ${pillCls}`}
+                  >
+                    <span aria-hidden>{slotEmoji(s)}</span>
+                    <span>{slotLabel(s)}</span>
+                    {filled && <span aria-hidden>✓</span>}
+                  </button>
+                  {filled && (
+                    <button
+                      type="button"
+                      onClick={() => void onClearSlot(s)}
+                      aria-label={`Clear ${slotLabel(s)} pick`}
+                      className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white border border-[var(--border)] text-[10px] text-[var(--text-muted)] hover:text-[var(--warning)] hover:border-[var(--warning)]/60 leading-none"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </span>
               )
             })}
+          </div>
+          {/* Helper line: clarifies the tap-to-change behavior + offers a
+              one-tap full reset so a player can start a race over fast. */}
+          <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
+            <span>
+              Tapping a horse fills{' '}
+              <span className="font-bold text-[var(--rose-dark)]">{slotLabel(activeSlot)}</span>
+              . Tap a slot pill above to change which.
+            </span>
+            {(existingPick?.win_horse_id || existingPick?.place_horse_id || existingPick?.show_horse_id) && (
+              <button
+                type="button"
+                onClick={() => void onClearAll()}
+                className="shrink-0 underline underline-offset-2 hover:text-[var(--warning)]"
+              >
+                Clear all
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -614,8 +778,13 @@ function RaceStep({
                           {h.morning_line_odds || '—'}
                         </span>
                         {sel && (
-                          <span className="inline-flex items-center justify-center min-w-[44px] h-7 px-2 rounded-full bg-[var(--gold)] text-[var(--bg-primary)] text-[11px] font-extrabold tabular-nums shadow">
-                            ✓ {slotLabel(sel)}
+                          // Trailing ✕ inside the badge tells the player
+                          // "tap me to clear" — the row's onClick already
+                          // handles deselect when the tapped horse is in the
+                          // active slot, so this is purely visual affordance.
+                          <span className="inline-flex items-center gap-1 min-w-[60px] h-7 px-2 rounded-full bg-[var(--gold)] text-[var(--bg-primary)] text-[11px] font-extrabold tabular-nums shadow">
+                            <span>✓ {slotLabel(sel)}</span>
+                            <span aria-hidden className="opacity-70">✕</span>
                           </span>
                         )}
                       </div>
@@ -922,6 +1091,16 @@ function PowerPlayStep({
   const [activeSlot, setActiveSlot] = useState<'3x' | '2x'>('3x')
   const [busy, setBusy] = useState(false)
 
+  // Race list visible for the active slot — drops whichever race is currently
+  // assigned to the OTHER slot so the player can't pick a duplicate. Reusing
+  // the active slot would just re-assign the same race, which is fine; only
+  // cross-slot duplicates need filtering.
+  const visibleRaces = useMemo(() => {
+    const otherRaceId = activeSlot === '3x' ? mult2x : mult3x
+    if (!otherRaceId) return pickedRaces
+    return pickedRaces.filter(r => r.id !== otherRaceId)
+  }, [pickedRaces, activeSlot, mult2x, mult3x])
+
   async function applySuggestions() {
     if (busy) return
     setBusy(true)
@@ -1023,12 +1202,20 @@ function PowerPlayStep({
           <div className="text-center text-[var(--text-muted)] italic py-10">
             You haven&apos;t picked any races, so there&apos;s nothing to multiply yet.
           </div>
+        ) : visibleRaces.length === 0 ? (
+          <div className="text-center text-[var(--text-muted)] italic py-10 px-6">
+            Your only picked race is already used for{' '}
+            <span className="text-[var(--gold)] font-semibold">
+              ×{activeSlot === '3x' ? '2' : '3'}
+            </span>
+            . Pick more races to assign a second power play.
+          </div>
         ) : (
           <ul className="space-y-2 max-w-xl mx-auto">
             <li className="text-[11px] text-[var(--text-muted)] uppercase tracking-wider font-bold px-2">
               Tap a race to assign your <span className="text-[var(--gold)]">×{activeSlot === '3x' ? '3' : '2'}</span>
             </li>
-            {pickedRaces.map(r => {
+            {visibleRaces.map(r => {
               const myPick = picks.find(p => p.race_id === r.id)
               const winHorse = (horsesByRace[r.id] ?? []).find(h => h.id === myPick?.win_horse_id)
               // Confidence indicator: % of the field that picked the same win horse.
