@@ -81,6 +81,22 @@ export type Score = {
   show_correct: boolean
 }
 
+/** A "your picked horse just got scratched" alert. Computed from the
+ *  intersection of picks × horses where horse.scratched is true. Surfaced
+ *  to players individually on /picks and aggregated event-wide on /admin. */
+export type ScratchAlert = {
+  playerId: string
+  playerName: string
+  playerAvatar: string
+  raceId: string
+  raceNumber: number
+  raceName: string
+  /** Which pick slot the scratched horse occupies for this player. */
+  slot: 'win' | 'place' | 'show'
+  horseNumber: number
+  horseName: string
+}
+
 export type Message = {
   id: string
   event_id: string

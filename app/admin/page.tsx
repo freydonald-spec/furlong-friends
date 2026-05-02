@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { AvatarIcon } from '@/lib/avatars'
 import { formatLocalIso, parseLocalIso } from '@/lib/time'
 import { computeBonus } from '@/lib/scoring'
+import { findScratchAlerts } from '@/lib/scratches'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 // Tick every second for live countdowns. Shared by every component that calls it.
@@ -67,6 +68,14 @@ export default function AdminPage() {
   const event = useMemo(
     () => allEvents.find(e => e.id === selectedEventId) ?? null,
     [allEvents, selectedEventId]
+  )
+
+  // Event-wide scratched-pick alerts. Recomputes whenever any of the
+  // underlying tables change via realtime, so the panel appears the moment
+  // an admin scratches a horse and disappears once players swap their picks.
+  const scratchAlerts = useMemo(
+    () => findScratchAlerts({ players, picks, races, horsesByRace }),
+    [players, picks, races, horsesByRace],
   )
 
   // Restore admin session after hydration.
@@ -325,6 +334,12 @@ export default function AdminPage() {
         </div>
       </nav>
 
+      {/* Scratch alerts — surfaces above the active tab whenever any player
+          has a pick on a now-scratched horse. Self-hides when empty. */}
+      {scratchAlerts.length > 0 && (
+        <ScratchAlertsPanel alerts={scratchAlerts} />
+      )}
+
       <div className="max-w-4xl mx-auto w-full px-4 py-6 flex-1">
         {loading ? (
           <div className="text-center py-20"><div className="text-4xl mb-2 animate-pulse">⚙️</div><p className="text-white/70">Loading…</p></div>
@@ -343,6 +358,51 @@ export default function AdminPage() {
         {qrOpen && <QRCodeModal onClose={() => setQrOpen(false)} />}
       </AnimatePresence>
     </main>
+  )
+}
+
+// ---------- Scratch alerts panel ----------
+
+/** Amber warning card listing every player whose pick is on a scratched
+ *  horse. Driven by ScratchAlert[] computed in the parent — the parent's
+ *  realtime subscriptions on horses + picks + players keep this list current
+ *  without any state ownership here. */
+function ScratchAlertsPanel({ alerts }: { alerts: ReturnType<typeof findScratchAlerts> }) {
+  const slotLabel = (s: 'win' | 'place' | 'show') =>
+    s === 'win' ? 'WIN' : s === 'place' ? 'PLACE' : 'SHOW'
+  return (
+    <div className="max-w-4xl mx-auto w-full px-4 pt-4">
+      <div className="rounded-xl border-2 border-amber-500/60 bg-amber-500/10 p-4 shadow-md">
+        <div className="flex items-center gap-2 mb-3">
+          <span aria-hidden className="text-xl">⚠️</span>
+          <h3 className="font-serif text-lg font-bold text-amber-200">
+            Scratch Alerts
+          </h3>
+          <span className="text-amber-200/70 text-xs font-bold uppercase tracking-wider tabular-nums">
+            {alerts.length} affected
+          </span>
+        </div>
+        <ul className="space-y-1.5">
+          {alerts.map(a => (
+            <li
+              key={`${a.playerId}-${a.raceId}-${a.slot}`}
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-black/30 border border-amber-500/30"
+            >
+              <AvatarIcon id={a.playerAvatar} className="w-8 h-8 rounded-md shrink-0" />
+              <div className="flex-1 min-w-0 text-sm text-white/90">
+                <span className="font-bold text-white">🏇 {a.playerName}</span>
+                <span className="text-white/55"> · </span>
+                <span className="font-semibold">Race {a.raceNumber}</span>
+                <span className="text-white/55"> · </span>
+                <span className="font-bold text-amber-200">{slotLabel(a.slot)}:</span>{' '}
+                <span className="font-mono">#{a.horseNumber} {a.horseName}</span>{' '}
+                <span className="text-white/55 italic">(scratched)</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   )
 }
 

@@ -15,6 +15,7 @@ import { PeerConfidenceBar } from '@/components/PeerConfidenceBar'
 import { PickWizard } from '@/components/PickWizard'
 import { ScoringLegendStrip } from '@/components/ScoringLegendStrip'
 import { PartyChat } from '@/components/PartyChat'
+import { findScratchAlerts } from '@/lib/scratches'
 import type { Event, Race, Horse, Player, Pick, Score } from '@/lib/types'
 
 export default function PicksPage() {
@@ -606,6 +607,26 @@ export default function PicksPage() {
     return { count: unpicked.length, soonest, races: unpicked }
   }, [races, picks, now])
 
+  // Scratched-pick alerts for the current player. The horses-table realtime
+  // subscription further up updates `horsesByRace` whenever an admin flips a
+  // scratch, so this memo recomputes automatically and the banner appears /
+  // disappears on its own (no manual dismiss state needed). The Set of race
+  // ids is consumed by the RaceTile to draw a ⚠️ corner badge.
+  const myScratchAlerts = useMemo(
+    () => player ? findScratchAlerts({
+      players: player ? [player] : [],
+      picks,
+      races,
+      horsesByRace,
+      playerId: player.id,
+    }) : [],
+    [player, picks, races, horsesByRace],
+  )
+  const scratchedRaceIds = useMemo(
+    () => new Set(myScratchAlerts.map(a => a.raceId)),
+    [myScratchAlerts],
+  )
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center">
@@ -816,6 +837,36 @@ export default function PicksPage() {
         </section>
       )}
 
+      {/* Scratched-pick warnings — one persistent banner per affected race.
+          Tappable to open the race info modal so the player can swap horses;
+          the banner self-dismisses once the swap removes the scratched horse
+          from their picks. Lives directly above the race grid as spec'd. */}
+      {myScratchAlerts.length > 0 && (
+        <section className="px-5 mb-2">
+          <div className="max-w-2xl mx-auto space-y-2">
+            {myScratchAlerts.map(a => (
+              <button
+                key={`${a.raceId}-${a.slot}`}
+                type="button"
+                onClick={() => setInfoModalRaceId(a.raceId)}
+                className="w-full text-left px-4 py-3 rounded-xl border-2 border-[var(--warning)] bg-red-50 text-[var(--text-primary)] shadow-sm hover:bg-red-100 active:scale-[0.99] transition-all"
+              >
+                <div className="text-sm font-semibold leading-snug">
+                  <span aria-hidden className="mr-1">⚠️</span>
+                  Your pick in{' '}
+                  <span className="font-bold">Race {a.raceNumber}</span>,{' '}
+                  <span className="font-bold">#{a.horseNumber} {a.horseName}</span>
+                  , has been scratched.{' '}
+                  <span className="text-[var(--rose-dark)] underline underline-offset-2">
+                    Tap to update your pick.
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Race Cards */}
       <section className="px-5">
         <div className="max-w-2xl mx-auto">
@@ -914,6 +965,7 @@ export default function PicksPage() {
                           player.multiplier_2x_race_id === race.id ? '2x' : null
                         }
                         peerConf={peerByRace[race.id] ?? null}
+                        hasScratchedPick={scratchedRaceIds.has(race.id)}
                         now={now}
                         onOpen={() => setInfoModalRaceId(race.id)}
                       />
@@ -1182,7 +1234,7 @@ function NextRaceBanner({
 
 // ----- RACE TILE — compact grid card -----
 function RaceTile({
-  race, horses, pick, score, scoreRevealed, multiplier, peerConf, now, onOpen,
+  race, horses, pick, score, scoreRevealed, multiplier, peerConf, hasScratchedPick, now, onOpen,
 }: {
   race: Race
   horses: Horse[]
@@ -1192,6 +1244,9 @@ function RaceTile({
   multiplier: '2x' | '3x' | null
   /** Per-race confidence summary; null when fewer than 5 players have win-picked. */
   peerConf: RaceConfidence | null
+  /** True if at least one of the player's picks for this race is on a horse
+   *  that's now scratched. Drives the corner ⚠️ badge. */
+  hasScratchedPick: boolean
   now: number
   onOpen: () => void
 }) {
@@ -1315,6 +1370,16 @@ function RaceTile({
       onClick={onOpen}
       className={`relative text-left w-full min-h-[120px] p-3 rounded-xl border border-[var(--border)] border-l-[3px] ${borderL} ${bgClass} shadow-sm hover:shadow-md hover:bg-[var(--bg-card-hover)] active:scale-[0.99] transition-all`}
     >
+      {/* Scratched-pick corner badge — pulses to nudge the player toward the
+          warning banner above the grid. */}
+      {hasScratchedPick && (
+        <span
+          aria-label="One of your picks for this race was scratched"
+          className="absolute -top-2 -right-2 z-10 inline-flex items-center justify-center w-7 h-7 rounded-full bg-[var(--warning)] text-white text-sm border-2 border-white shadow-md animate-pulse"
+        >
+          ⚠️
+        </span>
+      )}
       <div className="flex items-start justify-between gap-1 mb-1">
         <div className="flex items-center gap-1">
           <span className="text-sm font-extrabold text-[var(--text-muted)]">Race {race.race_number}</span>
