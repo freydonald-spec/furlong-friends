@@ -9,9 +9,11 @@ import type { Event, Race } from '@/lib/types'
 type ExactaHorse = { id: string; number: number; scratched: boolean; name: string }
 
 const PASSWORD = 'roses2025'
-const N = 20
-const TOTAL_SQUARES = N * N
-const PLAYABLE_SQUARES = TOTAL_SQUARES - N // 380
+/** Fallback grid size used only before the horses for the chosen race have
+ *  loaded — once `activeHorseNumbers` is known, `N` is derived from it so
+ *  any field size (19-horse Derby, 20-horse full field, 14-horse Oaks, etc.)
+ *  works without a config change. */
+const FALLBACK_N = 20
 
 const COLORS = [
   '#C0392B','#1A6B3C','#2471A3','#8E44AD','#D97706',
@@ -33,9 +35,9 @@ type Square = {
 type Player = { name: string; count: number; color: string; idx: number }
 type BoardCell = number | 'X' | null
 
-function emptyBoard(): BoardCell[][] {
-  return Array.from({ length: N }, (_, r) =>
-    Array.from({ length: N }, (_, c) => (r === c ? ('X' as const) : null))
+function emptyBoard(n: number): BoardCell[][] {
+  return Array.from({ length: n }, (_, r) =>
+    Array.from({ length: n }, (_, c) => (r === c ? ('X' as const) : null))
   )
 }
 
@@ -805,8 +807,12 @@ export default function ExactaPage() {
   const [loadingEvents, setLoadingEvents] = useState(true)
   // The race the exacta board is built around — picked from the event's
   // races (featured wins; fall back to highest race_number, the marquee
-  // closer slot most cards put the Derby in).
-  const [exactaRaceId, setExactaRaceId] = useState<string | null>(null)
+  // closer slot most cards put the Derby in). Stored as a slim record so
+  // the debug pill can render name + number without a second lookup.
+  const [exactaRace, setExactaRace] = useState<
+    { id: string; race_number: number; name: string } | null
+  >(null)
+  const exactaRaceId = exactaRace?.id ?? null
   const [horses, setHorses] = useState<ExactaHorse[]>([])
 
   useEffect(() => {
@@ -823,41 +829,6 @@ export default function ExactaPage() {
       setLoadingEvents(false)
     })()
   }, [authed])
-
-  // Resolve the "exacta race" for the chosen event + load its horses.
-  // Heuristic: the highest-multiplier featured race wins (Derby / Oaks).
-  // If nothing's flagged, fall back to the highest race_number — typically
-  // the marquee race anchored at the bottom of the card.
-  useEffect(() => {
-    if (!authed || !eventId) {
-      setExactaRaceId(null)
-      setHorses([])
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      const { data: racesData } = await supabase
-        .from('races')
-        .select('*')
-        .eq('event_id', eventId)
-        .order('race_number')
-      if (cancelled) return
-      const list = (racesData ?? []) as Race[]
-      const featured = [...list]
-        .filter(r => r.is_featured)
-        .sort((a, b) => b.featured_multiplier - a.featured_multiplier)[0]
-      const target = featured ?? list[list.length - 1] ?? null
-      setExactaRaceId(target?.id ?? null)
-      if (!target) { setHorses([]); return }
-      const { data: horsesData } = await supabase
-        .from('horses')
-        .select('id, number, scratched, name')
-        .eq('race_id', target.id)
-      if (cancelled) return
-      setHorses(((horsesData ?? []) as ExactaHorse[]))
-    })()
-    return () => { cancelled = true }
-  }, [authed, eventId])
 
   // Realtime: any horse change for the exacta race re-syncs the local list,
   // so a scratch flipped from /admin shows up on the board immediately.
@@ -888,11 +859,31 @@ export default function ExactaPage() {
   }, [horses])
   const scratchCount = scratchedNumbers.size
 
+  // ── Dynamic grid size ─────────────────────────────────────────
+  // Active (non-scratched at seed time) horse numbers, ascending. Drives the
+  // grid dimensions and the pool we shuffle/randomize from. Falls back to
+  // 1..20 before horses load so the page can render a placeholder grid
+  // instead of flashing 0×0.
+  const activeHorseNumbers = useMemo(() => {
+    if (horses.length === 0) {
+      return Array.from({ length: FALLBACK_N }, (_, i) => i + 1)
+    }
+    return horses
+      .filter(h => !h.scratched)
+      .map(h => h.number)
+      .sort((a, b) => a - b)
+  }, [horses])
+  const N = activeHorseNumbers.length || FALLBACK_N
+  const totalSquares = N * N
+  const playableSquares = totalSquares - N
+
   // ── Board / Players state (mirrors original HTML) ──────────────
   const [players, setPlayers] = useState<Player[]>([])
-  const [board, setBoard] = useState<BoardCell[][]>(emptyBoard)
-  const [rowNums, setRowNums] = useState<number[]>(() => Array.from({ length: N }, (_, i) => i + 1))
-  const [colNums, setColNums] = useState<number[]>(() => Array.from({ length: N }, (_, i) => i + 1))
+  // Initial board / axis values use the FALLBACK size; loadBoard replaces
+  // them with the real shape once the chosen race's horses are loaded.
+  const [board, setBoard] = useState<BoardCell[][]>(() => emptyBoard(FALLBACK_N))
+  const [rowNums, setRowNums] = useState<number[]>(() => Array.from({ length: FALLBACK_N }, (_, i) => i + 1))
+  const [colNums, setColNums] = useState<number[]>(() => Array.from({ length: FALLBACK_N }, (_, i) => i + 1))
   const [numbersLocked, setNumbersLocked] = useState(false)
   const [winnerCell, setWinnerCell] = useState<{ row: number; col: number } | null>(null)
   const [winnerInfo, setWinnerInfo] = useState<{ name: string; detail: string; color: string } | null>(null)
@@ -924,12 +915,20 @@ export default function ExactaPage() {
   const [cellSize, setCellSize] = useState(28)
 
   // ── Load (or seed) board for selected event ────────────────────
-  const loadBoard = useCallback(async (eId: string) => {
+  // Takes the race's actual active horse numbers so the seed can write
+  // real post-position values (Derby alternates use 21/22/23) instead of
+  // the legacy 1..20 sequence. The board is built as an N×N matrix indexed
+  // 0..N-1 internally, but squaresMap is keyed by ACTUAL horse numbers so
+  // axis-number lookups work directly without an index translation.
+  const loadBoard = useCallback(async (eId: string, activeNumbers: number[]) => {
     setLoadingBoard(true)
     setWinnerCell(null)
     setWinnerInfo(null)
     setFirst(''); setSecond('')
     setPickingPlayer(null); setPickingCount(0); setPickingTarget(0)
+
+    const n = activeNumbers.length
+    const numberToIndex = new Map(activeNumbers.map((num, idx) => [num, idx]))
 
     let { data } = await supabase
       .from('exacta_squares')
@@ -937,16 +936,19 @@ export default function ExactaPage() {
       .eq('event_id', eId)
     let list = (data ?? []) as Square[]
 
-    if (list.length === 0) {
+    if (list.length === 0 && n > 0) {
+      // Seed every (row_horse, col_horse) pair from the active set. Numbers
+      // are the real post positions, not 1..N indices, so a future renderer
+      // can read them directly.
       const rows: Omit<Square, 'id'>[] = []
-      for (let r = 1; r <= N; r++) {
-        for (let c = 1; c <= N; c++) {
+      for (const rNum of activeNumbers) {
+        for (const cNum of activeNumbers) {
           rows.push({
             event_id: eId,
-            row_horse: r,
-            col_horse: c,
+            row_horse: rNum,
+            col_horse: cNum,
             buyer_name: null,
-            is_diagonal: r === c,
+            is_diagonal: rNum === cNum,
           })
         }
       }
@@ -956,7 +958,9 @@ export default function ExactaPage() {
       list = (inserted ?? []) as Square[]
     }
 
-    // Build squaresMap and player groupings
+    // Build squaresMap keyed by the actual horse numbers (e.g. "21,4" or
+    // "1,1"). Renderers and click handlers look up squares by axis number,
+    // not grid index, so this avoids an extra translation hop.
     const map: Record<string, Square> = {}
     for (const s of list) map[`${s.row_horse},${s.col_horse}`] = s
 
@@ -973,11 +977,15 @@ export default function ExactaPage() {
     const nameToIdx: Record<string, number> = {}
     newPlayers.forEach(p => { nameToIdx[p.name] = p.idx })
 
-    // Build board
-    const newBoard = emptyBoard()
+    // Build the visual board. Squares whose horse numbers aren't in the
+    // current active set (e.g. legacy 1..20 data on a race that now uses
+    // alternates) silently fall off the grid — they stay in the DB but
+    // can't be rendered anywhere meaningful.
+    const newBoard = emptyBoard(n)
     for (const s of list) {
-      const r = s.row_horse - 1
-      const c = s.col_horse - 1
+      const r = numberToIndex.get(s.row_horse)
+      const c = numberToIndex.get(s.col_horse)
+      if (r === undefined || c === undefined) continue
       if (s.is_diagonal) { newBoard[r][c] = 'X'; continue }
       if (s.buyer_name && nameToIdx[s.buyer_name] !== undefined) {
         const idx = nameToIdx[s.buyer_name]
@@ -986,16 +994,22 @@ export default function ExactaPage() {
       }
     }
 
-    // Restore axis numbers from localStorage (per event)
-    let nextRow: number[] = Array.from({ length: N }, (_, i) => i + 1)
-    let nextCol: number[] = Array.from({ length: N }, (_, i) => i + 1)
+    // Restore axis numbers from localStorage (per event). Validate against
+    // the current active set — if the persisted axes use stale numbers we
+    // discard them and fall back to the identity sequence.
+    let nextRow: number[] = activeNumbers
+    let nextCol: number[] = activeNumbers
     let nextLocked = false
     try {
       const raw = localStorage.getItem(`exacta_axes_${eId}`)
       if (raw) {
         const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed.rowNums) && parsed.rowNums.length === N) nextRow = parsed.rowNums
-        if (Array.isArray(parsed.colNums) && parsed.colNums.length === N) nextCol = parsed.colNums
+        const validAxis = (arr: unknown): arr is number[] =>
+          Array.isArray(arr)
+            && arr.length === n
+            && arr.every(x => typeof x === 'number' && numberToIndex.has(x))
+        if (validAxis(parsed.rowNums)) nextRow = parsed.rowNums
+        if (validAxis(parsed.colNums)) nextCol = parsed.colNums
         if (typeof parsed.numbersLocked === 'boolean') nextLocked = parsed.numbersLocked
       }
     } catch {}
@@ -1009,9 +1023,117 @@ export default function ExactaPage() {
     setLoadingBoard(false)
   }, [])
 
+  // Resolve the "exacta race" for the chosen event, load its horses, then
+  // hand the active-horse-number list to loadBoard so the seed (or
+  // existing-row hydration) can use real post-position numbers as keys.
+  // Sequenced as one effect to avoid the race where loadBoard fires before
+  // horses are known and seeds with the fallback 1..20 numbers.
   useEffect(() => {
-    if (!authed || !eventId) return
-    void loadBoard(eventId)
+    // TEMP debug — confirms the effect fires every time the dropdown writes
+    // a fresh eventId. If you select Kentucky Derby 152 and DON'T see this
+    // log with the right uuid, the bug is in the picker, not the loader.
+    // eslint-disable-next-line no-console
+    console.log('[exacta] race-loader effect entered', {
+      authed,
+      eventId,
+      willBail: !authed || !eventId,
+    })
+    if (!authed || !eventId) {
+      setExactaRace(null)
+      setHorses([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      // 1) Pull every race for THIS event only (event-scoped query — never
+      // crosses events).
+      const { data: racesData, error: racesErr } = await supabase
+        .from('races')
+        .select('*')
+        .eq('event_id', eventId)
+        .order('race_number')
+      if (cancelled) return
+      if (racesErr) {
+        // Surfaces RLS denials, network failures, malformed queries — used
+        // to be silently swallowed which left exactaRace stuck at null.
+        // eslint-disable-next-line no-console
+        console.error('[exacta] races query failed', { eventId, error: racesErr })
+      }
+      const list = (racesData ?? []) as Race[]
+      if (list.length === 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[exacta] races query returned 0 rows for event_id=' + eventId
+          + ' — check RLS on public.races or whether the event actually has any race rows.'
+        )
+      }
+      // 2) Heuristic: highest-multiplier featured race wins; otherwise the
+      // race with the highest race_number (the marquee closer slot most
+      // cards put the Derby in). The Supabase query already orders ASC by
+      // race_number, but we sort defensively here so the fallback is
+      // explicit and doesn't rely on the upstream order.
+      const featured = [...list]
+        .filter(r => r.is_featured)
+        .sort((a, b) => b.featured_multiplier - a.featured_multiplier)[0]
+      const highestNumberRace = [...list]
+        .sort((a, b) => b.race_number - a.race_number)[0]
+        ?? null
+      const target = featured ?? highestNumberRace ?? null
+      // TEMP debug — verify the heuristic landed on the right race.
+      // Compare `chosenRaceId` against the expected Derby race id in devtools.
+      // eslint-disable-next-line no-console
+      console.log('[exacta] race selection', {
+        eventId,
+        racesInEvent: list.map(r => ({
+          id: r.id, race_number: r.race_number, name: r.name,
+          is_featured: r.is_featured, featured_multiplier: r.featured_multiplier,
+        })),
+        chosenRaceId: target?.id ?? null,
+        chosenName: target?.name ?? null,
+        chosenRaceNumber: target?.race_number ?? null,
+        reason: featured
+          ? 'highest-multiplier featured race'
+          : highestNumberRace
+            ? 'fallback: highest race_number'
+            : 'no races available — exactaRace will be null',
+      })
+      setExactaRace(target ? { id: target.id, race_number: target.race_number, name: target.name } : null)
+
+      // 3) Load horses for that ONE race only — single .eq filter, no joins
+      // and no cross-race fan-out. The realtime channel below also pins to
+      // this race_id so a scratch on another race never lands here.
+      let horseList: ExactaHorse[] = []
+      if (target) {
+        const { data: horsesData, error: horsesErr } = await supabase
+          .from('horses')
+          .select('id, number, scratched, name')
+          .eq('race_id', target.id)
+        if (cancelled) return
+        if (horsesErr) {
+          // eslint-disable-next-line no-console
+          console.error('[exacta] horse load failed', horsesErr)
+        }
+        horseList = (horsesData ?? []) as ExactaHorse[]
+        // eslint-disable-next-line no-console
+        console.log('[exacta] horses loaded', {
+          raceId: target.id,
+          total: horseList.length,
+          active: horseList.filter(h => !h.scratched).length,
+          scratched: horseList.filter(h => h.scratched).length,
+          numbers: horseList.map(h => h.number).sort((a, b) => a - b),
+        })
+      }
+      setHorses(horseList)
+
+      const activeNumbers = horseList.length > 0
+        ? horseList.filter(h => !h.scratched).map(h => h.number).sort((a, b) => a - b)
+        // Brand-new event with no horses yet — fall back to 1..20 so the
+        // user can still fool around with the board pre-race-card.
+        : Array.from({ length: FALLBACK_N }, (_, i) => i + 1)
+
+      await loadBoard(eventId, activeNumbers)
+    })()
+    return () => { cancelled = true }
   }, [authed, eventId, loadBoard])
 
   // ── Helpers: persist axis state to localStorage ────────────────
@@ -1041,7 +1163,7 @@ export default function ExactaPage() {
     if (!count || count < 1) { alert('Please enter a valid number of squares.'); return }
 
     const taken = players.reduce((s, p) => s + p.count, 0)
-    const available = PLAYABLE_SQUARES - taken
+    const available = playableSquares - taken
     if (count > available) { alert(`Only ${available} squares left! Choose a smaller bundle.`); return }
     if (players.some(p => p.name === name)) { alert('That name is already in use — pick a unique one.'); return }
 
@@ -1064,9 +1186,10 @@ export default function ExactaPage() {
       setBoard(newBoard)
       setPlayerName('')
 
-      // Save to Supabase
+      // Save to Supabase. squaresMap keys are actual horse-number pairs
+      // (e.g. "21,4"), not grid indices, so map (r, c) → (rowNums[r], colNums[c]).
       const ids = chosen
-        .map(([r, c]) => squaresMap[`${r + 1},${c + 1}`]?.id)
+        .map(([r, c]) => squaresMap[`${rowNums[r]},${colNums[c]}`]?.id)
         .filter(Boolean) as string[]
       if (ids.length > 0) {
         const { error } = await supabase
@@ -1123,8 +1246,9 @@ export default function ExactaPage() {
       for (let c = 0; c < N; c++)
         if (board[r][c] === pickingPlayer) cells.push([r, c])
 
+    // Same translation as random-assign: grid index → actual horse-number key.
     const ids = cells
-      .map(([r, c]) => squaresMap[`${r + 1},${c + 1}`]?.id)
+      .map(([r, c]) => squaresMap[`${rowNums[r]},${colNums[c]}`]?.id)
       .filter(Boolean) as string[]
 
     if (ids.length > 0) {
@@ -1211,10 +1335,13 @@ export default function ExactaPage() {
       try { localStorage.removeItem(`exacta_axes_${eventId}`) } catch {}
     }
     setPlayers([])
-    setBoard(emptyBoard())
-    const fresh = Array.from({ length: N }, (_, i) => i + 1)
-    setRowNums(fresh)
-    setColNums(fresh)
+    setBoard(emptyBoard(N))
+    // Reset axes back to the identity sequence of active horse numbers —
+    // pre-lock display shows "?", so the underlying value just needs to be
+    // a coherent permutation of activeHorseNumbers so subsequent renders /
+    // shuffles operate on the correct pool.
+    setRowNums(activeHorseNumbers)
+    setColNums(activeHorseNumbers)
     setNumbersLocked(false)
     setWinnerCell(null)
     setWinnerInfo(null)
@@ -1223,9 +1350,11 @@ export default function ExactaPage() {
   }
 
   // ── Randomize horse numbers ────────────────────────────────────
+  // Shuffles the actual active-horse-number pool onto each axis so
+  // alternates (PP 21/22/23) get a real chance at any grid position.
   function shuffleNumbers() {
-    const nextRow = shuffle(Array.from({ length: N }, (_, i) => i + 1))
-    const nextCol = shuffle(Array.from({ length: N }, (_, i) => i + 1))
+    const nextRow = shuffle(activeHorseNumbers)
+    const nextCol = shuffle(activeHorseNumbers)
     setRowNums(nextRow)
     setColNums(nextCol)
     setNumbersLocked(true)
@@ -1239,8 +1368,15 @@ export default function ExactaPage() {
   function findWinner() {
     const f = parseInt(first, 10)
     const s = parseInt(second, 10)
-    if (isNaN(f) || isNaN(s) || f < 1 || f > 20 || s < 1 || s > 20 || f === s) {
-      alert('Please enter valid horse numbers (1-20) for both places.')
+    if (isNaN(f) || isNaN(s) || f === s) {
+      alert('Please enter two different horse numbers.')
+      return
+    }
+    // Validate against the active set (e.g. Derby alternates use 21/22/23
+    // — a flat 1..20 range check would reject those).
+    const validNumbers = new Set(activeHorseNumbers)
+    if (!validNumbers.has(f) || !validNumbers.has(s)) {
+      alert(`Horse numbers must be in the active set: ${activeHorseNumbers.join(', ')}.`)
       return
     }
     const row = rowNums.indexOf(f)
@@ -1348,7 +1484,7 @@ export default function ExactaPage() {
 
   useEffect(() => {
     if (!numbersLocked && players.length > 0) {
-      setStatusBadge(`${PLAYABLE_SQUARES - used} squares remaining — click 🎲 Randomize to lock in horse numbers`)
+      setStatusBadge(`${playableSquares - used} squares remaining — click 🎲 Randomize to lock in horse numbers`)
     } else if (players.length === 0) {
       setStatusBadge('Add players, then randomize numbers to lock the board')
     }
@@ -1658,9 +1794,36 @@ export default function ExactaPage() {
                 </div>
                 <div className="pot-right">
                   <div className="pot-amount">${used}</div>
-                  <div className="pot-sub">{used} of {PLAYABLE_SQUARES} squares sold</div>
+                  <div className="pot-sub">{used} of {playableSquares} squares sold</div>
                 </div>
               </div>
+
+              {/* TEMP debug pill — surfaces which race the exacta board is
+                  actually pinned to so we can verify the heuristic landed
+                  on the right one. Kentucky Derby 152 should read
+                  bb4164b7-6e6b-4d29-a079-467ac5c60b7d with 24 horses
+                  (19 active, 5 scratched). Remove once verified. */}
+              {exactaRace && (
+                <div
+                  style={{
+                    margin: '8px 0',
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    border: '1px dashed rgba(201,168,76,0.45)',
+                    background: 'rgba(201,168,76,0.08)',
+                    color: 'rgba(245,237,214,0.9)',
+                    fontSize: '0.72rem',
+                    fontFamily: 'ui-monospace, monospace',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <span style={{ color: '#C9A84C', fontWeight: 700 }}>[DEBUG]</span>{' '}
+                  exacta_race_id = <span style={{ color: '#E8C96A' }}>{exactaRace.id}</span>
+                  {' · '}R{exactaRace.race_number} {exactaRace.name && `· ${exactaRace.name}`}
+                  {' · '}horses: {horses.length} ({horses.filter(h => !h.scratched).length} active,{' '}
+                  {horses.filter(h => h.scratched).length} scratched)
+                </div>
+              )}
 
               {/* Scratch warning — only when at least one horse in the exacta
                   race is flagged scratched. Squares on those rows / columns
@@ -1756,7 +1919,7 @@ export default function ExactaPage() {
                   </div>
                 </div>
                 <div className="control-section">
-                  <h3>Players ({players.length} · {used}/{PLAYABLE_SQUARES})</h3>
+                  <h3>Players ({players.length} · {used}/{playableSquares})</h3>
                   <div className="players-list">
                     {players.length === 0 ? (
                       <div style={{ fontSize: '0.75rem', color: 'rgba(245,237,214,0.4)', fontStyle: 'italic', padding: 6 }}>
@@ -1936,7 +2099,7 @@ export default function ExactaPage() {
             <div style={{ textAlign: 'center', padding: '0 24px' }}>
               <div style={{ fontFamily: '"Bebas Neue", cursive', fontSize: '0.9rem', letterSpacing: '3px', color: 'rgba(245,237,214,0.7)' }}>🏆 WINNER TAKES ALL</div>
               <div style={{ fontFamily: '"Bebas Neue", cursive', fontSize: '3.5rem', color: '#C9A84C', lineHeight: 1, textShadow: '0 2px 20px rgba(201,168,76,0.5)' }}>${used}</div>
-              <div style={{ fontSize: '0.7rem', color: 'rgba(245,237,214,0.6)', letterSpacing: '1px' }}>{used} of {PLAYABLE_SQUARES} squares sold</div>
+              <div style={{ fontSize: '0.7rem', color: 'rgba(245,237,214,0.6)', letterSpacing: '1px' }}>{used} of {playableSquares} squares sold</div>
             </div>
             <button
               onClick={exitDisplayMode}
