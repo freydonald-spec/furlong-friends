@@ -283,7 +283,7 @@ export default function AdminPage() {
             <select
               value={selectedEventId ?? ''}
               onChange={e => setSelectedEventId(e.target.value || null)}
-              className="admin-input h-9 text-sm flex-1 min-w-[200px] max-w-md"
+              className="h-9 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] flex-1 min-w-[200px] max-w-md [&>option]:bg-[#1a2035] [&>option]:text-white"
             >
               {allEvents.map(e => (
                 <option key={e.id} value={e.id}>
