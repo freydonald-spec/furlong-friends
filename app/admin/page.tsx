@@ -595,21 +595,21 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
           <input
             value={draft.name ?? ''}
             onChange={e => setDraft({ ...draft, name: e.target.value })}
-            className="admin-input"
+            className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40"
           />
         </Field>
         <Field label="Track">
           <input
             value={draft.track ?? ''}
             onChange={e => setDraft({ ...draft, track: e.target.value })}
-            className="admin-input"
+            className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40"
           />
         </Field>
         <Field label="Location">
           <input
             value={draft.location ?? ''}
             onChange={e => setDraft({ ...draft, location: e.target.value })}
-            className="admin-input"
+            className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40"
           />
         </Field>
         <Field label="Date">
@@ -617,7 +617,7 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
             type="date"
             value={typeof draft.date === 'string' ? draft.date.slice(0, 10) : ''}
             onChange={e => setDraft({ ...draft, date: e.target.value })}
-            className="admin-input"
+            className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40 [color-scheme:dark]"
           />
         </Field>
         <Field label="Entry Fee ($)">
@@ -626,7 +626,7 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
             min={0}
             value={draft.buy_in_amount ?? 0}
             onChange={e => setDraft({ ...draft, buy_in_amount: Number(e.target.value) })}
-            className="admin-input"
+            className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40"
           />
         </Field>
         <Field label="Max races for players">
@@ -635,14 +635,14 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
             min={1}
             value={draft.max_game_races ?? 7}
             onChange={e => setDraft({ ...draft, max_game_races: Number(e.target.value) })}
-            className="admin-input"
+            className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40"
           />
         </Field>
         <Field label="Status">
           <select
             value={draft.status ?? 'draft'}
             onChange={e => setDraft({ ...draft, status: e.target.value })}
-            className="admin-input"
+            className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] [&>option]:bg-[#1a2035] [&>option]:text-white"
           >
             <option value="draft">Draft</option>
             <option value="active">Active</option>
@@ -723,7 +723,7 @@ function EventEditor({ event, onChange, onDeleted }: { event: Event; onChange: (
                 onChange={e => setDeleteText(e.target.value)}
                 placeholder="Event name"
                 autoFocus
-                className="admin-input w-full"
+                className="w-full h-12 px-3 rounded-lg bg-[#1a2035] text-white text-[15px] border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40"
               />
             </div>
             <div className="flex gap-2 justify-end">
@@ -2350,7 +2350,7 @@ function RaceAdminCard({ race, allRaces, horses: horsesProp, players, picks, now
                   await supabase.from('races').update({ post_time: next }).eq('id', race.id)
                   onChange()
                 }}
-                className="admin-input h-10 text-sm"
+                className="w-full h-10 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40 [color-scheme:dark]"
               />
             </Field>
             {race.is_featured && (
@@ -2364,7 +2364,7 @@ function RaceAdminCard({ race, allRaces, horses: horsesProp, players, picks, now
                     const v = Number(e.target.value)
                     if (Number.isFinite(v) && v >= 1) void setMultiplier(v)
                   }}
-                  className="admin-input h-10 text-sm w-20"
+                  className="w-20 h-10 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40"
                 />
               </Field>
             )}
@@ -2410,9 +2410,9 @@ function RaceAdminCard({ race, allRaces, horses: horsesProp, players, picks, now
               </div>
             )}
             <div className="mt-3 flex gap-2 flex-wrap">
-              <input value={horseNumber} onChange={e => setHorseNumber(e.target.value)} placeholder="#" type="number" className="admin-input w-16 text-sm h-10" />
-              <input value={horseName} onChange={e => setHorseName(e.target.value)} placeholder="Horse name" className="admin-input flex-1 min-w-[140px] text-sm h-10" />
-              <input value={horseOdds} onChange={e => setHorseOdds(e.target.value)} placeholder="Odds (e.g. 5-1)" className="admin-input w-28 text-sm h-10" />
+              <input value={horseNumber} onChange={e => setHorseNumber(e.target.value)} placeholder="#" type="number" className="w-16 h-10 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40" />
+              <input value={horseName} onChange={e => setHorseName(e.target.value)} placeholder="Horse name" className="flex-1 min-w-[140px] h-10 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40" />
+              <input value={horseOdds} onChange={e => setHorseOdds(e.target.value)} placeholder="Odds (e.g. 5-1)" className="w-28 h-10 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40" />
               <button onClick={addHorse} disabled={busy || !horseName || !horseNumber} className="px-4 h-10 rounded-lg bg-[var(--rose-dark)] border border-[var(--gold)]/60 text-white text-sm font-bold disabled:opacity-50">
                 Add
               </button>
@@ -2909,7 +2909,7 @@ function PlayersTab({
       <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
         <div className="text-amber-200 text-xs font-bold uppercase mb-1">Broadcast Alert</div>
         <div className="flex gap-2">
-          <input value={alertText} onChange={e => setAlertText(e.target.value)} placeholder="Message" className="admin-input flex-1 text-sm h-10" />
+          <input value={alertText} onChange={e => setAlertText(e.target.value)} placeholder="Message" className="flex-1 h-10 px-3 rounded-lg bg-[#1a2035] text-white text-sm border-2 border-white/20 focus:outline-none focus:border-[var(--gold)] placeholder:text-white/40" />
           <button onClick={broadcastAlert} className="px-4 h-10 rounded-lg bg-amber-400 text-black font-bold text-sm">Send</button>
         </div>
       </div>
