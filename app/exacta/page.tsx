@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Event } from '@/lib/types'
+import type { Event, Race } from '@/lib/types'
+
+/** Slim slice of horses we care about for scratched detection on the
+ *  exacta board — the page never needs morning_line_odds or finish_position. */
+type ExactaHorse = { id: string; number: number; scratched: boolean; name: string }
 
 const PASSWORD = 'roses2025'
 const N = 20
@@ -799,6 +803,11 @@ export default function ExactaPage() {
   const [events, setEvents] = useState<Event[]>([])
   const [eventId, setEventId] = useState<string | null>(null)
   const [loadingEvents, setLoadingEvents] = useState(true)
+  // The race the exacta board is built around — picked from the event's
+  // races (featured wins; fall back to highest race_number, the marquee
+  // closer slot most cards put the Derby in).
+  const [exactaRaceId, setExactaRaceId] = useState<string | null>(null)
+  const [horses, setHorses] = useState<ExactaHorse[]>([])
 
   useEffect(() => {
     if (!authed) return
@@ -814,6 +823,70 @@ export default function ExactaPage() {
       setLoadingEvents(false)
     })()
   }, [authed])
+
+  // Resolve the "exacta race" for the chosen event + load its horses.
+  // Heuristic: the highest-multiplier featured race wins (Derby / Oaks).
+  // If nothing's flagged, fall back to the highest race_number — typically
+  // the marquee race anchored at the bottom of the card.
+  useEffect(() => {
+    if (!authed || !eventId) {
+      setExactaRaceId(null)
+      setHorses([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { data: racesData } = await supabase
+        .from('races')
+        .select('*')
+        .eq('event_id', eventId)
+        .order('race_number')
+      if (cancelled) return
+      const list = (racesData ?? []) as Race[]
+      const featured = [...list]
+        .filter(r => r.is_featured)
+        .sort((a, b) => b.featured_multiplier - a.featured_multiplier)[0]
+      const target = featured ?? list[list.length - 1] ?? null
+      setExactaRaceId(target?.id ?? null)
+      if (!target) { setHorses([]); return }
+      const { data: horsesData } = await supabase
+        .from('horses')
+        .select('id, number, scratched, name')
+        .eq('race_id', target.id)
+      if (cancelled) return
+      setHorses(((horsesData ?? []) as ExactaHorse[]))
+    })()
+    return () => { cancelled = true }
+  }, [authed, eventId])
+
+  // Realtime: any horse change for the exacta race re-syncs the local list,
+  // so a scratch flipped from /admin shows up on the board immediately.
+  useEffect(() => {
+    if (!exactaRaceId) return
+    const channel = supabase
+      .channel(`exacta-horses-${exactaRaceId}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'horses', filter: `race_id=eq.${exactaRaceId}` },
+        async () => {
+          const { data } = await supabase
+            .from('horses')
+            .select('id, number, scratched, name')
+            .eq('race_id', exactaRaceId)
+          if (data) setHorses(data as ExactaHorse[])
+        })
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [exactaRaceId])
+
+  // Set of post-position numbers that are currently scratched. Empty until
+  // numbersLocked is true — before lock-in the row/col labels are placeholder
+  // "?"s so there's no meaningful number-to-horse mapping yet.
+  const scratchedNumbers = useMemo(() => {
+    const s = new Set<number>()
+    for (const h of horses) if (h.scratched) s.add(h.number)
+    return s
+  }, [horses])
+  const scratchCount = scratchedNumbers.size
 
   // ── Board / Players state (mirrors original HTML) ──────────────
   const [players, setPlayers] = useState<Player[]>([])
@@ -1018,6 +1091,12 @@ export default function ExactaPage() {
     if (assignMode !== 'pick' || pickingPlayer === null) return
     if (r === c) return
     if (board[r][c] !== null) return
+    // Belt-and-braces: even though scratched cells render disabled with a
+    // not-allowed cursor, also bail here so a stray re-render race can't
+    // sneak a purchase through.
+    if (numbersLocked && (
+      scratchedNumbers.has(rowNums[r]) || scratchedNumbers.has(colNums[c])
+    )) return
     if (pickingCount >= pickingTarget) {
       alert(`You've already selected ${pickingTarget} squares. Click ✓ Confirm to save.`)
       return
@@ -1318,6 +1397,10 @@ export default function ExactaPage() {
     const isDiagonal = r === c
     const pIdx = typeof cell === 'number' ? cell : null
     const player = pIdx !== null ? players[pIdx] : null
+    // Scratched only matters once the row/col labels point to real horses.
+    const rowScratched = numbersLocked && scratchedNumbers.has(rowNums[r])
+    const colScratched = numbersLocked && scratchedNumbers.has(colNums[c])
+    const scratched = !isDiagonal && (rowScratched || colScratched)
 
     const classes: string[] = ['cell']
     const baseFs = Math.max(8, Math.floor(cellSize * 0.4))
@@ -1325,11 +1408,15 @@ export default function ExactaPage() {
       width: cellSize,
       height: cellSize,
       fontSize: `${baseFs}px`,
+      position: 'relative', // anchor for the VOID overlay
     }
     let content: React.ReactNode = null
     let tooltip = ''
 
-    if (assignMode === 'pick' && pickingPlayer !== null && !isDiagonal && cell === null) {
+    if (
+      assignMode === 'pick' && pickingPlayer !== null
+      && !isDiagonal && cell === null && !scratched
+    ) {
       classes.push('cell-picking')
     }
 
@@ -1361,6 +1448,38 @@ export default function ExactaPage() {
       tooltip = `Empty · ${rowLabel} × ${colLabel}`
     }
 
+    if (scratched) {
+      // Diagonal stripes overlay communicates "this row/col is voided".
+      // For owned (player) squares we keep the buyer color visible underneath
+      // and lay the stripes on top via backgroundImage; the player initials
+      // stay readable. For empty squares the stripes are the entire fill.
+      const stripe = 'repeating-linear-gradient(45deg, rgba(120,0,0,0.55) 0 4px, rgba(0,0,0,0.65) 4px 8px)'
+      if (player) {
+        style = {
+          ...style,
+          backgroundImage: stripe,
+          backgroundColor: player.color,
+          opacity: 0.85,
+        }
+      } else {
+        style = {
+          ...style,
+          background: stripe,
+          border: '1px solid rgba(139,26,47,0.4)',
+          opacity: 0.7,
+          cursor: 'not-allowed',
+        }
+      }
+      const rowLabel = numbersLocked ? `Horse #${rowNums[r]}` : `Row ${r + 1}`
+      const colLabel = numbersLocked ? `Horse #${colNums[c]}` : `Col ${c + 1}`
+      const which = rowScratched && colScratched
+        ? 'both horses'
+        : rowScratched ? rowLabel : colLabel
+      tooltip = player
+        ? `VOID · ${player.name}'s square (${which} scratched)`
+        : `VOID · ${which} scratched`
+    }
+
     return (
       <button
         key={`${r}-${c}`}
@@ -1368,9 +1487,30 @@ export default function ExactaPage() {
         className={classes.join(' ')}
         style={style}
         onClick={() => clickCell(r, c)}
-        disabled={isDiagonal}
+        disabled={isDiagonal || scratched}
       >
         {content}
+        {scratched && (
+          // Small red corner badge — visible regardless of whether the cell
+          // was owned (overlays the player initials) or empty (sits on stripes).
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              padding: '0 3px',
+              fontSize: `${Math.max(7, Math.floor(cellSize * 0.28))}px`,
+              fontWeight: 800,
+              letterSpacing: '0.4px',
+              color: '#fff',
+              background: 'rgba(200,20,30,0.95)',
+              borderBottomLeftRadius: 3,
+              lineHeight: 1.1,
+              pointerEvents: 'none',
+            }}
+          >VOID</span>
+        )}
         {tooltip && <span className="tooltip">{tooltip}</span>}
       </button>
     )
@@ -1383,13 +1523,35 @@ export default function ExactaPage() {
     const isDiagonal = r === c
     const pIdx = typeof cell === 'number' ? cell : null
     const player = pIdx !== null ? players[pIdx] : null
+    const rowScratched = numbersLocked && scratchedNumbers.has(rowNums[r])
+    const colScratched = numbersLocked && scratchedNumbers.has(colNums[c])
+    const scratched = !isDiagonal && (rowScratched || colScratched)
     const cs = displayCellSize
     const fs = Math.max(7, Math.floor(cs * 0.38))
 
     const baseStyle: React.CSSProperties = {
       width: cs, height: cs,
       fontSize: `${fs}px`,
+      position: 'relative',
     }
+    const voidBadge = (
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          padding: '0 2px',
+          fontSize: `${Math.max(6, Math.floor(cs * 0.26))}px`,
+          fontWeight: 800,
+          color: '#fff',
+          background: 'rgba(200,20,30,0.95)',
+          borderBottomLeftRadius: 2,
+          lineHeight: 1.1,
+        }}
+      >VOID</span>
+    )
+    const stripe = 'repeating-linear-gradient(45deg, rgba(120,0,0,0.55) 0 4px, rgba(0,0,0,0.65) 4px 8px)'
 
     if (isDiagonal) {
       return (
@@ -1422,18 +1584,25 @@ export default function ExactaPage() {
           background: player.color,
           border: `1px solid ${player.color}`,
           color: 'rgba(255,255,255,0.9)',
+          ...(scratched ? { backgroundImage: stripe, opacity: 0.85 } : {}),
         }}>
           {initials}
-          <span className="dtip">{`${player.name} · ${rl2} × ${cl2}`}</span>
+          {scratched && voidBadge}
+          <span className="dtip">
+            {scratched ? `VOID · ${player.name}` : `${player.name} · ${rl2} × ${cl2}`}
+          </span>
         </div>
       )
     }
     return (
       <div key={`d-${r}-${c}`} className="dcell" style={{
         ...baseStyle,
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.07)',
-      }} />
+        ...(scratched
+          ? { background: stripe, border: '1px solid rgba(139,26,47,0.4)', opacity: 0.7 }
+          : { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.07)' }),
+      }}>
+        {scratched && voidBadge}
+      </div>
     )
   }
 
@@ -1492,6 +1661,32 @@ export default function ExactaPage() {
                   <div className="pot-sub">{used} of {PLAYABLE_SQUARES} squares sold</div>
                 </div>
               </div>
+
+              {/* Scratch warning — only when at least one horse in the exacta
+                  race is flagged scratched. Squares on those rows / columns
+                  are visually voided in the grid below. */}
+              {scratchCount > 0 && (
+                <div
+                  style={{
+                    margin: '8px 0',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(220,30,30,0.5)',
+                    background: 'rgba(220,30,30,0.12)',
+                    color: '#FFD9D9',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.4px',
+                  }}
+                >
+                  ⚠️ {scratchCount} horse{scratchCount === 1 ? '' : 's'} scratched
+                  {' — '}
+                  <span style={{ fontWeight: 400, opacity: 0.85 }}>
+                    affected rows &amp; columns are voided. Existing buyers keep their square color
+                    but it pays $0.
+                  </span>
+                </div>
+              )}
 
               <div className="controls">
                 <div className="control-section">
@@ -1652,32 +1847,50 @@ export default function ExactaPage() {
                 <div className="board-label vertical">🏇 1st Place Horse (Rows)</div>
                 <div className="grid-wrapper">
                   <div className="grid-header-row" style={{ marginLeft: 51 }}>
-                    {colNums.map((n, i) => (
-                      <div
-                        key={i}
-                        className="col-label"
-                        style={{
-                          width: cellSize,
-                          height: Math.max(18, Math.round(cellSize * 0.7)),
-                          fontSize: `${Math.max(10, Math.floor(cellSize * 0.36))}px`,
-                        }}
-                      >{numbersLocked ? n : '?'}</div>
-                    ))}
+                    {colNums.map((n, i) => {
+                      const isScratched = numbersLocked && scratchedNumbers.has(n)
+                      return (
+                        <div
+                          key={i}
+                          className="col-label"
+                          style={{
+                            width: cellSize,
+                            height: Math.max(18, Math.round(cellSize * 0.7)),
+                            fontSize: `${Math.max(10, Math.floor(cellSize * 0.36))}px`,
+                            ...(isScratched ? {
+                              background: 'repeating-linear-gradient(45deg, rgba(120,0,0,0.55) 0 4px, rgba(0,0,0,0.65) 4px 8px)',
+                              color: '#FFD9D9',
+                              opacity: 0.85,
+                            } : {}),
+                          }}
+                          title={isScratched ? `Horse #${n} scratched` : undefined}
+                        >{numbersLocked ? (isScratched ? 'SCR' : n) : '?'}</div>
+                      )
+                    })}
                   </div>
                   <div className="grid-body">
-                    {Array.from({ length: N }, (_, r) => (
-                      <div key={r} className="grid-row">
-                        <div
-                          className="row-label"
-                          style={{
-                            width: 50,
-                            height: cellSize,
-                            fontSize: `${Math.max(10, Math.floor(cellSize * 0.36))}px`,
-                          }}
-                        >{numbersLocked ? `#${rowNums[r]}` : '?'}</div>
-                        {Array.from({ length: N }, (_, c) => renderCell(r, c))}
-                      </div>
-                    ))}
+                    {Array.from({ length: N }, (_, r) => {
+                      const isScratched = numbersLocked && scratchedNumbers.has(rowNums[r])
+                      return (
+                        <div key={r} className="grid-row">
+                          <div
+                            className="row-label"
+                            style={{
+                              width: 50,
+                              height: cellSize,
+                              fontSize: `${Math.max(10, Math.floor(cellSize * 0.36))}px`,
+                              ...(isScratched ? {
+                                background: 'repeating-linear-gradient(45deg, rgba(120,0,0,0.55) 0 4px, rgba(0,0,0,0.65) 4px 8px)',
+                                color: '#FFD9D9',
+                                opacity: 0.85,
+                              } : {}),
+                            }}
+                            title={isScratched ? `Horse #${rowNums[r]} scratched` : undefined}
+                          >{numbersLocked ? (isScratched ? 'SCR' : `#${rowNums[r]}`) : '?'}</div>
+                          {Array.from({ length: N }, (_, c) => renderCell(r, c))}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               </div>
@@ -1742,32 +1955,46 @@ export default function ExactaPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                   <div style={{ display: 'flex', gap: 1, marginLeft: 43 }}>
-                    {colNums.map((n, i) => (
-                      <div key={`dh-${i}`} style={{
-                        width: displayCellSize,
-                        height: Math.round(displayCellSize * 0.85),
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontFamily: '"Bebas Neue", cursive',
-                        fontSize: `${Math.max(7, Math.floor(displayCellSize * 0.32))}px`,
-                        color: '#E8C96A', background: 'rgba(201,168,76,0.1)',
-                        borderRadius: '2px 2px 0 0', flexShrink: 0,
-                      }}>{numbersLocked ? n : '?'}</div>
-                    ))}
+                    {colNums.map((n, i) => {
+                      const isScratched = numbersLocked && scratchedNumbers.has(n)
+                      return (
+                        <div key={`dh-${i}`} style={{
+                          width: displayCellSize,
+                          height: Math.round(displayCellSize * 0.85),
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontFamily: '"Bebas Neue", cursive',
+                          fontSize: `${Math.max(7, Math.floor(displayCellSize * 0.32))}px`,
+                          color: isScratched ? '#FFD9D9' : '#E8C96A',
+                          background: isScratched
+                            ? 'repeating-linear-gradient(45deg, rgba(120,0,0,0.55) 0 4px, rgba(0,0,0,0.65) 4px 8px)'
+                            : 'rgba(201,168,76,0.1)',
+                          opacity: isScratched ? 0.85 : 1,
+                          borderRadius: '2px 2px 0 0', flexShrink: 0,
+                        }}>{numbersLocked ? (isScratched ? 'SCR' : n) : '?'}</div>
+                      )
+                    })}
                   </div>
-                  {Array.from({ length: N }, (_, r) => (
-                    <div key={`dr-${r}`} style={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <div style={{
-                        width: 42,
-                        height: displayCellSize,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontFamily: '"Bebas Neue", cursive',
-                        fontSize: `${Math.max(7, Math.floor(displayCellSize * 0.32))}px`,
-                        color: '#E8C96A', background: 'rgba(201,168,76,0.1)',
-                        borderRadius: '2px 0 0 2px', flexShrink: 0, marginRight: 1,
-                      }}>{numbersLocked ? `#${rowNums[r]}` : '?'}</div>
-                      {Array.from({ length: N }, (_, c) => renderDisplayCell(r, c))}
-                    </div>
-                  ))}
+                  {Array.from({ length: N }, (_, r) => {
+                    const isScratched = numbersLocked && scratchedNumbers.has(rowNums[r])
+                    return (
+                      <div key={`dr-${r}`} style={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <div style={{
+                          width: 42,
+                          height: displayCellSize,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontFamily: '"Bebas Neue", cursive',
+                          fontSize: `${Math.max(7, Math.floor(displayCellSize * 0.32))}px`,
+                          color: isScratched ? '#FFD9D9' : '#E8C96A',
+                          background: isScratched
+                            ? 'repeating-linear-gradient(45deg, rgba(120,0,0,0.55) 0 4px, rgba(0,0,0,0.65) 4px 8px)'
+                            : 'rgba(201,168,76,0.1)',
+                          opacity: isScratched ? 0.85 : 1,
+                          borderRadius: '2px 0 0 2px', flexShrink: 0, marginRight: 1,
+                        }}>{numbersLocked ? (isScratched ? 'SCR' : `#${rowNums[r]}`) : '?'}</div>
+                        {Array.from({ length: N }, (_, c) => renderDisplayCell(r, c))}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
